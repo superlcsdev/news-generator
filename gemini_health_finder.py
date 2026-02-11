@@ -2,8 +2,7 @@ import google.generativeai as genai
 import os
 from datetime import datetime
 import json
-import requests
-from bs4 import BeautifulSoup
+import feedparser
 
 # Configure Gemini
 genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
@@ -19,25 +18,19 @@ def fetch_recent_health_articles():
         'https://consumer.healthday.com/rss/healthday.rss',
     ]
     
-    try:
-        import feedparser
-        
-        for feed_url in rss_feeds:
-            try:
-                feed = feedparser.parse(feed_url)
-                for entry in feed.entries[:10]:  # Get top 10 from each
-                    articles.append({
-                        'title': entry.get('title', ''),
-                        'url': entry.get('link', ''),
-                        'summary': entry.get('summary', ''),
-                        'source': feed.feed.get('title', 'Unknown')
-                    })
-            except Exception as e:
-                print(f"Error fetching {feed_url}: {e}")
-                continue
-    except ImportError:
-        print("feedparser not installed, using sample data")
-        return []
+    for feed_url in rss_feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:10]:
+                articles.append({
+                    'title': entry.get('title', ''),
+                    'url': entry.get('link', ''),
+                    'summary': entry.get('summary', ''),
+                    'source': feed.feed.get('title', 'Unknown')
+                })
+        except Exception as e:
+            print(f"Error fetching {feed_url}: {e}")
+            continue
     
     return articles
 
@@ -48,7 +41,7 @@ def score_articles_with_gemini(articles):
     
     articles_text = "\n\n".join([
         f"Article {i+1}:\nTitle: {a['title']}\nSource: {a['source']}\nSummary: {a['summary'][:200]}"
-        for i, a in enumerate(articles[:30])  # Limit to 30 to avoid token limits
+        for i, a in enumerate(articles[:30])
     ])
     
     prompt = f"""Here are recent health articles from today. Analyze them and select the TOP 3 that have the highest viral potential.
@@ -74,7 +67,6 @@ Return ONLY the JSON array."""
 
     response = model.generate_content(prompt)
     
-    # Parse the response
     try:
         clean_response = response.text.strip()
         if clean_response.startswith('```json'):
@@ -84,7 +76,6 @@ Return ONLY the JSON array."""
         
         selections = json.loads(clean_response)
         
-        # Build final results
         results = []
         for selection in selections:
             idx = selection['article_number'] - 1
@@ -98,7 +89,6 @@ Return ONLY the JSON array."""
     
     except Exception as e:
         print(f"Error parsing Gemini response: {e}")
-        # Fallback: return first 3 articles with default scores
         return [
             {**articles[i], 'viral_score': 75, 'why_viral': 'Trending health topic'}
             for i in range(min(3, len(articles)))
@@ -121,28 +111,20 @@ if __name__ == "__main__":
     print("🔍 Fetching recent health articles...\n")
     
     try:
-        # Fetch recent articles
         recent_articles = fetch_recent_health_articles()
         
         if not recent_articles:
-            print("No articles found, using Gemini standalone mode")
-            # Fallback to original approach
-            model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content("Generate 3 trending health article ideas with titles, URLs, and viral scores in JSON format")
-            print(response.text)
+            print("No articles found")
             with open('daily_articles.txt', 'w') as f:
-                f.write(response.text)
+                f.write("No articles found from RSS feeds")
         else:
             print(f"Found {len(recent_articles)} articles. Analyzing with Gemini...\n")
             
-            # Score with Gemini
             top_articles = score_articles_with_gemini(recent_articles)
             
-            # Format output
             formatted_output = format_output(top_articles)
             print(formatted_output)
             
-            # Save outputs
             with open('daily_articles.txt', 'w', encoding='utf-8') as f:
                 f.write(formatted_output)
             
@@ -157,11 +139,3 @@ if __name__ == "__main__":
         traceback.print_exc()
         with open('daily_articles.txt', 'w') as f:
             f.write(f"Error occurred: {e}\n\n{traceback.format_exc()}")
-```
-
-### Update `requirements.txt`:
-```
-google-generativeai>=0.3.0
-feedparser>=6.0.0
-beautifulsoup4>=4.12.0
-requests>=2.31.0
