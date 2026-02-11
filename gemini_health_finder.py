@@ -38,7 +38,7 @@ Focus on recent breakthroughs, surprising findings, or trending health topics. N
     # Enable grounding with Google Search
     response = model.generate_content(
         prompt,
-        tools='google_search_retrieval'  # This enables web search for free!
+        tools='google_search_retrieval'
     )
     
     return response.text
@@ -48,23 +48,22 @@ def format_output(json_response):
     try:
         articles = json.loads(json_response)
         
-        output = f"?? Top 3 Viral Health Articles - {datetime.now().strftime('%B %d, %Y')}\n\n"
+        output = f"🔥 Top 3 Viral Health Articles - {datetime.now().strftime('%B %d, %Y')}\n\n"
         
         for i, article in enumerate(articles, 1):
             output += f"{i}. **{article['title']}**\n"
-            output += f"   ?? Viral Score: {article['viral_score']}/100\n"
-            output += f"   ?? Why it's viral: {article['why_viral']}\n"
-            output += f"   ?? {article['url']}\n"
-            output += f"   ?? Source: {article['source']}\n\n"
+            output += f"   📊 Viral Score: {article['viral_score']}/100\n"
+            output += f"   💡 Why it's viral: {article['why_viral']}\n"
+            output += f"   🔗 {article['url']}\n"
+            output += f"   📰 Source: {article['source']}\n\n"
         
         return output, articles
     
     except json.JSONDecodeError:
-        # Fallback if response isn't perfect JSON
-        return f"?? Raw Response:\n{json_response}", []
+        return f"⚠️ Raw Response:\n{json_response}", []
 
 if __name__ == "__main__":
-    print("?? Using Gemini AI to find viral health articles...\n")
+    print("🔍 Using Gemini AI to find viral health articles...\n")
     
     try:
         json_response = find_viral_health_articles()
@@ -80,17 +79,9 @@ if __name__ == "__main__":
             with open('daily_articles.json', 'w', encoding='utf-8') as f:
                 json.dump(articles, f, indent=2, ensure_ascii=False)
         
-        print("? Articles saved successfully!")
+        print("✅ Articles saved successfully!")
         
     except Exception as e:
-        print(f"? Error: {e}")
-        # Save error for debugging
+        print(f"❌ Error: {e}")
         with open('daily_articles.txt', 'w') as f:
             f.write(f"Error occurred: {e}")
-```
-
-### Step 3: Create requirements.txt
-
-Create `requirements.txt`:
-```
-google-generativeai>=0.3.0
