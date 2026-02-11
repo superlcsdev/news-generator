@@ -1,0 +1,70 @@
+name: Gemini Daily Health Articles
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 8 AM UTC daily
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  find-articles:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Run Gemini article finder
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        python gemini_health_finder.py
+    
+    - name: Upload results
+      uses: actions/upload-artifact@v3
+      with:
+        name: daily-articles
+        path: |
+          daily_articles.txt
+          daily_articles.json
+    
+    # Optional: Send via email
+    - name: Send email (optional)
+      if: success()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: ?? Daily Viral Health Articles (Gemini AI)
+        body: file://daily_articles.txt
+        to: ${{ secrets.EMAIL_USERNAME }}
+        from: Gemini Health Bot <${{ secrets.EMAIL_USERNAME }}>
+```
+
+### Step 5: Add Gemini API Key to GitHub Secrets
+
+1. Go to your repository ? **Settings**
+2. **Secrets and variables** ? **Actions**
+3. Click **New repository secret**
+4. Name: `GEMINI_API_KEY`
+5. Value: Paste your Gemini API key
+6. Click **Add secret**
+
+### Step 6: Repository Structure
+```
+your-repo/
++-- gemini_health_finder.py
++-- requirements.txt
++-- .github/
+    +-- workflows/
+        +-- gemini_daily_articles.yml
