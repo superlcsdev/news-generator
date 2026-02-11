@@ -9,8 +9,8 @@ genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
 def find_viral_health_articles():
     """Use Gemini with web search to find viral health articles"""
     
-    # Use Gemini 2.0 Flash (fastest, free, with grounding/search)
-    model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    # Use Gemini 1.5 Flash (fast, free, with grounding/search)
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
     prompt = f"""Today is {datetime.now().strftime('%B %d, %Y')}.
 
