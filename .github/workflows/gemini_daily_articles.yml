@@ -1,4 +1,4 @@
-name: Daily Health Articles
+name: Daily Health Articles with Social Posts & Images
 
 on:
   schedule:
@@ -22,14 +22,17 @@ jobs:
       run: |
         pip install -r requirements.txt
     
-    - name: Run article finder
+    - name: Run article finder and generate social posts
       run: |
         python gemini_health_finder.py
     
-    - name: Upload results
+    - name: Upload all results
       uses: actions/upload-artifact@v4
       with:
-        name: daily-articles
+        name: daily-articles-and-posts
         path: |
           daily_articles.txt
           daily_articles.json
+          social_media_posts.json
+          posts_*.txt
+          image_creation_guide.txt
