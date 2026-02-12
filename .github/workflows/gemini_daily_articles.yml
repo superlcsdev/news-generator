@@ -1,9 +1,9 @@
-name: Gemini Daily Health Articles
+name: Daily Health Articles
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Runs at 8 AM UTC daily
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 jobs:
   find-articles:
@@ -22,9 +22,7 @@ jobs:
       run: |
         pip install -r requirements.txt
     
-    - name: Run Gemini article finder
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    - name: Run article finder
       run: |
         python gemini_health_finder.py
     
