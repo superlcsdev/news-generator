@@ -36,8 +36,13 @@ def fetch_recent_health_articles():
 
 def score_articles_with_gemini(articles):
     """Use Gemini to score and select top 3 viral articles"""
+    print("Available models:")
+    mod = ''
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            mod = m.name
     
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel(mod)
     
     articles_text = "\n\n".join([
         f"Article {i+1}:\nTitle: {a['title']}\nSource: {a['source']}\nSummary: {a['summary'][:200]}"
@@ -139,3 +144,4 @@ if __name__ == "__main__":
         traceback.print_exc()
         with open('daily_articles.txt', 'w') as f:
             f.write(f"Error occurred: {e}\n\n{traceback.format_exc()}")
+
