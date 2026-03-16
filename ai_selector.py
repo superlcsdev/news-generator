@@ -12,6 +12,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BLOCKED_KEYWORDS = [
+    "conflict", "war", "attack", "bomb", "crisis", "death toll",
+    "killed", "shooting", "violence", "military", "missile",
+    "explosion", "hostage", "terrorism", "casualties"
+]
+
+def _is_suitable_for_posting(article: dict) -> bool:
+    """Filter out articles that won't generate good health lifestyle images."""
+    title_lower = article["title"].lower()
+    return not any(kw in title_lower for kw in BLOCKED_KEYWORDS)
+
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
@@ -122,27 +133,34 @@ def select_best_article(articles: list[dict]) -> dict | None:
     if not articles:
         return None
 
-    result = None
+    # Filter out unsuitable articles first
+    suitable = [a for a in articles if _is_suitable_for_posting(a)]
+    if not suitable:
+        print("  ⚠️  No suitable articles after filtering — using all.")
+        suitable = articles
+    print(f"  📊 {len(suitable)}/{len(articles)} articles passed content filter.")
 
+    # rest of the existing function using `suitable` instead of `articles`
+    result = None
     if GEMINI_API_KEY:
         print("  🤖 Using Gemini to select article...")
-        result = _select_via_gemini(articles)
+        result = _select_via_gemini(suitable)
     elif OPENROUTER_API_KEY:
         print("  🤖 Using OpenRouter to select article...")
-        result = _select_via_openrouter(articles)
+        result = _select_via_openrouter(suitable)
     else:
         print("  ⚠️  No AI key set — using heuristic selection.")
 
     if not result:
-        result = _heuristic_select(articles)
+        result = _heuristic_select(suitable)
 
-    idx    = result.get("selected_index", 0)
+    idx = result.get("selected_index", 0)
     reason = result.get("reason", "")
     print(f"  ✅ Selected index {idx}: {reason}")
 
-    if 0 <= idx < len(articles):
-        return articles[idx]
-    return articles[0]
+    if 0 <= idx < len(suitable):
+        return suitable[idx]
+    return suitable[0]
 
 
 if __name__ == "__main__":
