@@ -42,6 +42,7 @@ def _call_gemini(prompt: str) -> str | None:
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print(f"  ⚠️  Gemini hook error: {e}")
+        print(f"  ⚠️  Gemini response: {resp.text[:300] if 'resp' in locals() else 'no response'}")
         return None
 
 
