@@ -17,11 +17,7 @@ FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN", "")
 GRAPH_API_URL   = "https://graph.facebook.com/v19.0"
 
 
-def post_to_facebook(image_path: str, caption: str) -> bool:
-    """
-    Upload image and post to Facebook Page.
-    Returns True on success, False on failure.
-    """
+def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bool:
     if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
         print("  ❌ FB_PAGE_ID or FB_ACCESS_TOKEN not set in .env")
         return False
@@ -61,12 +57,31 @@ def post_to_facebook(image_path: str, caption: str) -> bool:
         )
 
         post_data = post_resp.json()
-        if "id" in post_data:
-            print(f"  ✅ Post published! Post ID: {post_data['id']}")
-            return True
-        else:
+        if "id" not in post_data:
             print(f"  ❌ Post failed: {post_data}")
             return False
+
+        post_id = post_data["id"]
+        print(f"  ✅ Post published! Post ID: {post_id}")
+
+        # Step 3: Add article URL as first comment
+        if article_url:
+            print("  💬 Adding article URL as first comment...")
+            comment_resp = requests.post(
+                f"{GRAPH_API_URL}/{post_id}/comments",
+                data={
+                    "access_token": FB_ACCESS_TOKEN,
+                    "message":      f"🔗 Read the full article here: {article_url}",
+                },
+                timeout=15,
+            )
+            comment_data = comment_resp.json()
+            if "id" in comment_data:
+                print(f"  ✅ Comment added!")
+            else:
+                print(f"  ⚠️  Comment failed: {comment_data}")
+
+        return True
 
     except Exception as e:
         print(f"  ❌ Facebook post exception: {e}")
