@@ -86,21 +86,29 @@ def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMA
         "seed":    str(int(time.time()) % 99999),  # slight variation each run
     }
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            print(f"  🎨 Generating background (attempt {attempt}/{MAX_RETRIES})...")
-            resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
-            if resp.status_code == 200:
-                img = Image.open(BytesIO(resp.content)).convert("RGB")
-                print(f"  ✅ Background received ({img.size[0]}x{img.size[1]}px)")
-                return img
-            else:
-                print(f"  ⚠️  HTTP {resp.status_code}, retrying in 5s...")
-        except requests.exceptions.ReadTimeout:
-            print(f"  ⏱️  Timeout on attempt {attempt}, waiting 5s...")
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
-        time.sleep(5)
+for attempt in range(1, MAX_RETRIES + 1):
+    try:
+        print(f"  🎨 Generating background (attempt {attempt}/{MAX_RETRIES})...")
+        resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
+        if resp.status_code == 200:
+            img = Image.open(BytesIO(resp.content)).convert("RGB")
+            print(f"  ✅ Background received ({img.size[0]}x{img.size[1]}px)")
+            return img
+        elif resp.status_code == 500 and attempt == 2:
+            # Swap to a safe generic health prompt on repeated 500s
+            print(f"  ⚠️  HTTP 500 — switching to generic fallback prompt...")
+            safe_prompt = (
+                "vibrant fresh healthy food flatlay, fruits vegetables superfoods, "
+                "bright natural lighting, professional photography, no text, no words"
+            )
+            url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(safe_prompt)}"
+        else:
+            print(f"  ⚠️  HTTP {resp.status_code}, retrying in 5s...")
+    except requests.exceptions.ReadTimeout:
+        print(f"  ⏱️  Timeout on attempt {attempt}, waiting 5s...")
+    except Exception as e:
+        print(f"  ❌ Error: {e}")
+    time.sleep(5)
 
     print("  ❌ All attempts failed — background generation skipped.")
     return None
