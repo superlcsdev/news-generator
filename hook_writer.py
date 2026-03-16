@@ -106,9 +106,9 @@ def generate_hook(article: dict) -> str:
         hook = _template_hook(article)
 
     # Append article URL if available
-    url = article.get("url", "")
-    if url:
-        hook = f"{hook}\n\n🔗 {url}"
+#    url = article.get("url", "")
+#    if url:
+#        hook = f"{hook}\n\n🔗 {url}"
 
     return hook
 
