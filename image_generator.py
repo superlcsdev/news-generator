@@ -17,7 +17,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 IMAGE_WIDTH  = 1200
-IMAGE_HEIGHT = 630   # Facebook link-post landscape ratio (1.91:1)
+IMAGE_HEIGHT = 632   # Facebook link-post landscape ratio (1.91:1)
 TIMEOUT_SECS = 120
 MAX_RETRIES  = 3
 
