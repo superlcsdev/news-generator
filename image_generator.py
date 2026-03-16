@@ -3,21 +3,31 @@ image_generator.py
 Generates Facebook post images using Pollinations.ai (free, no API key needed)
 - AI generates the background visual
 - Pillow overlays the headline text cleanly on top
+- Falls back to Hugging Face if Pollinations fails (set HF_API_TOKEN in .env)
 """
 
 import requests
 import time
-import textwrap
 import os
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 IMAGE_WIDTH  = 1200
 IMAGE_HEIGHT = 630   # Facebook link-post landscape ratio (1.91:1)
 TIMEOUT_SECS = 120
 MAX_RETRIES  = 3
+
+HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
+HF_API_URL   = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+
+SAFE_PROMPT = (
+    "vibrant fresh healthy food flatlay, fruits vegetables superfoods, "
+    "bright natural lighting, professional photography, no text, no words"
+)
 
 # Font paths to try (Windows → Linux fallbacks)
 FONT_PATHS_BOLD = [
@@ -42,7 +52,6 @@ def _load_font(paths: list, size: int) -> ImageFont.FreeTypeFont:
                 return ImageFont.truetype(path, size)
             except Exception:
                 pass
-    # Windows system font folder
     win_fonts = os.path.join(os.environ.get("WINDIR", ""), "Fonts")
     for path in paths:
         full = os.path.join(win_fonts, path)
@@ -55,10 +64,7 @@ def _load_font(paths: list, size: int) -> ImageFont.FreeTypeFont:
 
 
 def _build_prompt(headline: str, category: str = "health") -> str:
-    """
-    Turn a news headline into a good background-image prompt.
-    NO text/words in the prompt — text is added by Pillow later.
-    """
+    """Turn a news headline into a background-image prompt. No text in prompt."""
     category_styles = {
         "health":    "vibrant healthy lifestyle photography, fresh vegetables fruits superfoods, "
                      "bright natural lighting, clean minimal background, professional food/wellness photo",
@@ -75,12 +81,55 @@ def _build_prompt(headline: str, category: str = "health") -> str:
     return f"{style}, high resolution, no text, no words, no letters, photorealistic"
 
 
-def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMAGE_HEIGHT) -> Image.Image | None:
-    """Call Pollinations.ai and return a PIL Image, or None on failure."""
-    safe_prompt = (
-        "vibrant fresh healthy food flatlay, fruits vegetables superfoods, "
-        "bright natural lighting, professional photography, no text, no words"
-    )
+def _generate_via_huggingface(prompt: str, width: int, height: int):
+    """Fallback image generation using Hugging Face Inference API."""
+    if not HF_API_TOKEN:
+        print("  ⚠️  HF_API_TOKEN not set — skipping Hugging Face fallback.")
+        return None
+    try:
+        print("  🤗 Trying Hugging Face fallback...")
+        resp = requests.post(
+            HF_API_URL,
+            headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
+            json={
+                "inputs": prompt,
+                "parameters": {
+                    "width":               min(width, 1024),
+                    "height":              min(height, 1024),
+                    "num_inference_steps": 30,
+                    "guidance_scale":      7.5,
+                }
+            },
+            timeout=120,
+        )
+        if resp.status_code == 200:
+            img = Image.open(BytesIO(resp.content)).convert("RGB")
+            img = img.resize((width, height), Image.LANCZOS)
+            print(f"  ✅ Hugging Face image received ({img.size[0]}x{img.size[1]}px)")
+            return img
+        elif resp.status_code == 503:
+            print("  ⏳ Hugging Face model loading, waiting 20s...")
+            time.sleep(20)
+            resp = requests.post(
+                HF_API_URL,
+                headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
+                json={"inputs": prompt},
+                timeout=120,
+            )
+            if resp.status_code == 200:
+                img = Image.open(BytesIO(resp.content)).convert("RGB")
+                img = img.resize((width, height), Image.LANCZOS)
+                print("  ✅ Hugging Face image received on retry.")
+                return img
+        print(f"  ⚠️  Hugging Face returned HTTP {resp.status_code}: {resp.text[:200]}")
+        return None
+    except Exception as e:
+        print(f"  ❌ Hugging Face error: {e}")
+        return None
+
+
+def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMAGE_HEIGHT):
+    """Try Pollinations first, fall back to Hugging Face, then return None."""
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
     params = {
         "width":   width,
@@ -90,26 +139,33 @@ def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMA
         "seed":    str(int(time.time()) % 99999),
     }
 
+    # ── Try Pollinations ──────────────────────────────────────────────────────
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            print(f"  🎨 Generating background (attempt {attempt}/{MAX_RETRIES})...")
+            print(f"  🎨 Pollinations attempt {attempt}/{MAX_RETRIES}...")
             resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
             if resp.status_code == 200:
                 img = Image.open(BytesIO(resp.content)).convert("RGB")
-                print(f"  ✅ Background received ({img.size[0]}x{img.size[1]}px)")
+                print(f"  ✅ Pollinations image received ({img.size[0]}x{img.size[1]}px)")
                 return img
             elif resp.status_code == 500 and attempt == 2:
-                print(f"  ⚠️  HTTP 500 — switching to generic fallback prompt...")
-                url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(safe_prompt)}"
+                print("  ⚠️  HTTP 500 — switching to safe generic prompt...")
+                url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(SAFE_PROMPT)}"
             else:
                 print(f"  ⚠️  HTTP {resp.status_code}, retrying in 5s...")
         except requests.exceptions.ReadTimeout:
             print(f"  ⏱️  Timeout on attempt {attempt}, waiting 5s...")
         except Exception as e:
-            print(f"  ❌ Error: {e}")
+            print(f"  ❌ Pollinations error: {e}")
         time.sleep(5)
 
-    print("  ❌ All attempts failed — background generation skipped.")
+    # ── Try Hugging Face ──────────────────────────────────────────────────────
+    print("  ⚠️  Pollinations failed — trying Hugging Face...")
+    hf_img = _generate_via_huggingface(SAFE_PROMPT, width, height)
+    if hf_img:
+        return hf_img
+
+    print("  ❌ All image generation attempts failed.")
     return None
 
 
@@ -119,7 +175,7 @@ def _draw_gradient_overlay(image: Image.Image) -> Image.Image:
     overlay  = Image.new("RGBA", img_rgba.size, (0, 0, 0, 0))
     draw     = ImageDraw.Draw(overlay)
     w, h     = img_rgba.size
-    grad_h   = int(h * 0.55)   # covers bottom 55%
+    grad_h   = int(h * 0.55)
 
     for i in range(grad_h):
         alpha = int(195 * (i / grad_h))
@@ -129,11 +185,10 @@ def _draw_gradient_overlay(image: Image.Image) -> Image.Image:
     return Image.alpha_composite(img_rgba, overlay)
 
 
-def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont,
-               max_width: int) -> list[str]:
+def _wrap_text(draw, text: str, font, max_width: int) -> list:
     """Word-wrap text to fit within max_width pixels."""
-    words  = text.split()
-    lines  = []
+    words   = text.split()
+    lines   = []
     current = ""
     for word in words:
         test = f"{current} {word}".strip()
@@ -155,27 +210,27 @@ def add_text_overlay(
     tag:      str = "HEALTH NEWS",
 ) -> Image.Image:
     """Overlay headline + optional source/tag onto the background image."""
-
     image = _draw_gradient_overlay(image)
     draw  = ImageDraw.Draw(image)
     w, h  = image.size
     pad   = 50
 
-    # Fonts
     font_tag      = _load_font(FONT_PATHS_BOLD,    28)
     font_headline = _load_font(FONT_PATHS_BOLD,    58)
     font_source   = _load_font(FONT_PATHS_REGULAR, 30)
 
-    # ── TAG (top-left badge) ──────────────────────────────────────────────────
+    # ── TAG badge (top-left) ──────────────────────────────────────────────────
     tag_text = f"  {tag}  "
     tag_bbox = draw.textbbox((0, 0), tag_text, font=font_tag)
     tag_w    = tag_bbox[2] - tag_bbox[0] + 20
     tag_h    = tag_bbox[3] - tag_bbox[1] + 14
-    draw.rounded_rectangle([(pad, pad), (pad + tag_w, pad + tag_h)],
-                            radius=6, fill=(220, 50, 50, 220))
+    draw.rounded_rectangle(
+        [(pad, pad), (pad + tag_w, pad + tag_h)],
+        radius=6, fill=(220, 50, 50, 220)
+    )
     draw.text((pad + 10, pad + 7), tag_text, font=font_tag, fill=(255, 255, 255))
 
-    # ── HEADLINE (bottom area) ────────────────────────────────────────────────
+    # ── Headline (bottom area) ────────────────────────────────────────────────
     max_text_w  = w - pad * 2
     lines       = _wrap_text(draw, headline, font_headline, max_text_w)
     line_height = 70
@@ -183,12 +238,11 @@ def add_text_overlay(
     y           = h - pad - total_h
 
     for line in lines:
-        # Drop shadow
         draw.text((pad + 2, y + 2), line, font=font_headline, fill=(0, 0, 0, 180))
         draw.text((pad,     y),     line, font=font_headline, fill=(255, 255, 255))
         y += line_height
 
-    # ── SOURCE (below headline) ───────────────────────────────────────────────
+    # ── Source label (below headline) ─────────────────────────────────────────
     if source:
         draw.text((pad + 1, y + 1), source, font=font_source, fill=(0, 0, 0, 160))
         draw.text((pad,     y),     source, font=font_source, fill=(200, 200, 200))
@@ -197,17 +251,14 @@ def add_text_overlay(
 
 
 def create_post_image(
-    headline:  str,
-    output_path: str,
-    category:  str = "health",
-    source:    str = "",
-    tag:       str = "HEALTH NEWS",
+    headline:       str,
+    output_path:    str,
+    category:       str   = "health",
+    source:         str   = "",
+    tag:            str   = "HEALTH NEWS",
     fallback_color: tuple = (20, 90, 60),
-) -> str | None:
-    """
-    Full pipeline: generate background → overlay text → save file.
-    Returns the saved file path, or None on failure.
-    """
+):
+    """Full pipeline: generate background → overlay text → save file."""
     print(f"\n📸 Creating image for: \"{headline[:60]}...\"")
 
     prompt = _build_prompt(headline, category)
