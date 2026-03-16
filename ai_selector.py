@@ -52,7 +52,7 @@ def _select_via_gemini(articles: list[dict]) -> dict | None:
     try:
         prompt = SELECTION_PROMPT.format(articles_list=_build_articles_list(articles))
         resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}",
             json={"contents": [{"parts": [{"text": prompt}]}]},
             timeout=30,
         )
