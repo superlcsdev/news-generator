@@ -102,7 +102,11 @@ def run_pipeline(dry_run: bool = False, image_only: bool = False):
         print("  ⚠️  fb_poster.py not available — skipping post.")
         return
 
-    success = post_to_facebook(image_path=result_path, caption=hook)
+    success = post_to_facebook(
+        image_path  = result_path,
+        caption     = hook,
+        article_url = best.get("url", ""),
+    )
     if success:
         print("  🎉 Posted successfully to Facebook!")
         save_posted_article(best)

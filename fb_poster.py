@@ -1,9 +1,10 @@
 """
 fb_poster.py
 Posts an image + caption to a Facebook Page using the Graph API.
+Article URL is posted as the first comment (better for reach algorithm).
 Requires in .env:
   FB_PAGE_ID
-  FB_ACCESS_TOKEN  (Page access token with pages_manage_posts permission)
+  FB_ACCESS_TOKEN  (Page access token with pages_manage_posts + pages_manage_engagement)
 """
 
 import os
@@ -18,6 +19,11 @@ GRAPH_API_URL   = "https://graph.facebook.com/v19.0"
 
 
 def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bool:
+    """
+    Upload image and post to Facebook Page.
+    Posts article URL as first comment if provided.
+    Returns True on success, False on failure.
+    """
     if not FB_PAGE_ID or not FB_ACCESS_TOKEN:
         print("  ❌ FB_PAGE_ID or FB_ACCESS_TOKEN not set in .env")
         return False
@@ -77,7 +83,7 @@ def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bo
             )
             comment_data = comment_resp.json()
             if "id" in comment_data:
-                print(f"  ✅ Comment added!")
+                print("  ✅ Comment added!")
             else:
                 print(f"  ⚠️  Comment failed: {comment_data}")
 
@@ -89,7 +95,6 @@ def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bo
 
 
 if __name__ == "__main__":
-    # Test — requires a real image file and valid FB credentials
     print("FB_PAGE_ID set     :", bool(FB_PAGE_ID))
     print("FB_ACCESS_TOKEN set:", bool(FB_ACCESS_TOKEN))
     print("\nTo test: run  python main.py --dry-run  first.")

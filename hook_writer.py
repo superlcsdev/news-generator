@@ -42,7 +42,6 @@ def _call_gemini(prompt: str) -> str | None:
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         print(f"  ⚠️  Gemini hook error: {e}")
-        print(f"  ⚠️  Gemini response: {resp.text[:300] if 'resp' in locals() else 'no response'}")
         return None
 
 
@@ -105,11 +104,7 @@ def generate_hook(article: dict) -> str:
         print("  ⚠️  Using template hook (no AI key configured).")
         hook = _template_hook(article)
 
-    # Append article URL if available
-#    url = article.get("url", "")
-#    if url:
-#        hook = f"{hook}\n\n🔗 {url}"
-
+    # URL is posted as first comment in fb_poster.py — not in caption
     return hook
 
 

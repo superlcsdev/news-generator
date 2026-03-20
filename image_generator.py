@@ -22,7 +22,11 @@ TIMEOUT_SECS = 120
 MAX_RETRIES  = 3
 
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_API_URL   = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+
+# Primary HF model — SDXL (best quality)
+HF_API_URL_PRIMARY  = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
+# Secondary HF model — SD 2.1 (faster, more reliable fallback)
+HF_API_URL_FALLBACK = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-2-1"
 
 SAFE_PROMPT = (
     "vibrant fresh healthy food flatlay, fruits vegetables superfoods, "
@@ -121,15 +125,13 @@ def _build_prompt(headline: str, category: str = "health") -> str:
     return f"{style}, high resolution, photorealistic, vibrant"
 
 
-def _generate_via_huggingface(prompt: str, width: int, height: int):
-    """Fallback image generation using Hugging Face Inference API."""
+def _call_huggingface(prompt: str, width: int, height: int, api_url: str):
+    """Call a single HuggingFace model endpoint. Returns Image or None."""
     if not HF_API_TOKEN:
-        print("  ⚠️  HF_API_TOKEN not set — skipping Hugging Face fallback.")
         return None
     try:
-        print("  🤗 Trying Hugging Face fallback...")
         resp = requests.post(
-            HF_API_URL,
+            api_url,
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
             json={
                 "inputs": prompt,
@@ -145,13 +147,13 @@ def _generate_via_huggingface(prompt: str, width: int, height: int):
         if resp.status_code == 200:
             img = Image.open(BytesIO(resp.content)).convert("RGB")
             img = img.resize((width, height), Image.LANCZOS)
-            print(f"  ✅ Hugging Face image received ({img.size[0]}x{img.size[1]}px)")
             return img
         elif resp.status_code == 503:
-            print("  ⏳ Hugging Face model loading, waiting 20s...")
-            time.sleep(20)
+            # Model loading — wait and retry once
+            print(f"  ⏳ HF model loading, waiting 25s...")
+            time.sleep(25)
             resp = requests.post(
-                HF_API_URL,
+                api_url,
                 headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
                 json={"inputs": prompt},
                 timeout=120,
@@ -159,17 +161,38 @@ def _generate_via_huggingface(prompt: str, width: int, height: int):
             if resp.status_code == 200:
                 img = Image.open(BytesIO(resp.content)).convert("RGB")
                 img = img.resize((width, height), Image.LANCZOS)
-                print("  ✅ Hugging Face image received on retry.")
                 return img
-        print(f"  ⚠️  Hugging Face returned HTTP {resp.status_code}: {resp.text[:200]}")
+        print(f"  ⚠️  HF HTTP {resp.status_code}: {resp.text[:150]}")
         return None
     except Exception as e:
-        print(f"  ❌ Hugging Face error: {e}")
+        print(f"  ❌ HF error: {e}")
         return None
 
 
-def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMAGE_HEIGHT):
-    """Try Pollinations first, fall back to Hugging Face, then return None."""
+def _generate_via_huggingface(prompt: str, width: int, height: int):
+    """Try SDXL first, fall back to SD 2.1."""
+    if not HF_API_TOKEN:
+        print("  ⚠️  HF_API_TOKEN not set — skipping HuggingFace.")
+        return None
+
+    print("  🤗 Trying HuggingFace SDXL (primary)...")
+    img = _call_huggingface(prompt, width, height, HF_API_URL_PRIMARY)
+    if img:
+        print(f"  ✅ SDXL image received ({img.size[0]}x{img.size[1]}px)")
+        return img
+
+    print("  🤗 Trying HuggingFace SD 2.1 (secondary)...")
+    img = _call_huggingface(prompt, width, height, HF_API_URL_FALLBACK)
+    if img:
+        print(f"  ✅ SD 2.1 image received ({img.size[0]}x{img.size[1]}px)")
+        return img
+
+    print("  ❌ Both HuggingFace models failed.")
+    return None
+
+
+def _generate_via_pollinations(prompt: str, width: int, height: int):
+    """Last resort — try Pollinations new endpoint."""
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
     params = {
         "width":   width,
@@ -177,35 +200,49 @@ def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMA
         "nologo":  "true",
         "enhance": "true",
         "seed":    str(int(time.time()) % 99999),
+        "model":   "flux",   # flux model is more stable than default
     }
-
-    # ── Try Pollinations ──────────────────────────────────────────────────────
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, 3):
         try:
-            print(f"  🎨 Pollinations attempt {attempt}/{MAX_RETRIES}...")
-            resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
+            print(f"  🎨 Pollinations attempt {attempt}/2...")
+            resp = requests.get(url, params=params, timeout=90)
             if resp.status_code == 200:
                 img = Image.open(BytesIO(resp.content)).convert("RGB")
                 print(f"  ✅ Pollinations image received ({img.size[0]}x{img.size[1]}px)")
                 return img
-            elif resp.status_code == 500 and attempt == 2:
-                print("  ⚠️  HTTP 500 — switching to safe generic prompt...")
-                url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(SAFE_PROMPT)}"
-            else:
-                print(f"  ⚠️  HTTP {resp.status_code}, retrying in 5s...")
+            print(f"  ⚠️  Pollinations HTTP {resp.status_code}, retrying...")
         except requests.exceptions.ReadTimeout:
-            print(f"  ⏱️  Timeout on attempt {attempt}, waiting 5s...")
+            print(f"  ⏱️  Pollinations timeout on attempt {attempt}...")
         except Exception as e:
             print(f"  ❌ Pollinations error: {e}")
         time.sleep(5)
+    return None
 
-    # ── Try Hugging Face ──────────────────────────────────────────────────────
-    print("  ⚠️  Pollinations failed — trying Hugging Face...")
-    hf_img = _generate_via_huggingface(SAFE_PROMPT, width, height)
-    if hf_img:
-        return hf_img
 
-    print("  ❌ All image generation attempts failed.")
+def generate_background(prompt: str, width: int = IMAGE_WIDTH, height: int = IMAGE_HEIGHT):
+    """
+    Generate background image.
+    Priority: HuggingFace SDXL → HuggingFace SD 2.1 → Pollinations → None
+    """
+    # ── 1. Try HuggingFace (primary + secondary) ──────────────────
+    img = _generate_via_huggingface(prompt, width, height)
+    if img:
+        return img
+
+    # ── 2. Try HuggingFace with safe prompt if original failed ────
+    if prompt != SAFE_PROMPT:
+        print("  ⚠️  Retrying HuggingFace with safe generic prompt...")
+        img = _generate_via_huggingface(SAFE_PROMPT, width, height)
+        if img:
+            return img
+
+    # ── 3. Last resort: Pollinations ──────────────────────────────
+    print("  ⚠️  HuggingFace failed — trying Pollinations as last resort...")
+    img = _generate_via_pollinations(SAFE_PROMPT, width, height)
+    if img:
+        return img
+
+    print("  ❌ All image generation methods failed.")
     return None
 
 
