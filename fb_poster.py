@@ -72,7 +72,10 @@ def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bo
 
         # Step 3: Add article URL as first comment
         if article_url:
-            print("  💬 Adding article URL as first comment...")
+            print(f"  💬 Adding article URL as first comment to post {post_id}...")
+            # Small delay to ensure post is fully published before commenting
+            import time
+            time.sleep(3)
             comment_resp = requests.post(
                 f"{GRAPH_API_URL}/{post_id}/comments",
                 data={
@@ -83,7 +86,7 @@ def post_to_facebook(image_path: str, caption: str, article_url: str = "") -> bo
             )
             comment_data = comment_resp.json()
             if "id" in comment_data:
-                print("  ✅ Comment added!")
+                print(f"  ✅ Comment added! Comment ID: {comment_data['id']}")
             else:
                 print(f"  ⚠️  Comment failed: {comment_data}")
 

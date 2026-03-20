@@ -17,7 +17,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 IMAGE_WIDTH  = 1200
-IMAGE_HEIGHT = 630   # Facebook link-post landscape ratio (1.91:1)
+IMAGE_HEIGHT = 632   # divisible by 8 (required by HuggingFace) — visually same as 630
 TIMEOUT_SECS = 120
 MAX_RETRIES  = 3
 
@@ -129,6 +129,9 @@ def _call_huggingface(prompt: str, width: int, height: int, api_url: str):
     """Call a single HuggingFace model endpoint. Returns Image or None."""
     if not HF_API_TOKEN:
         return None
+    # HuggingFace requires dimensions divisible by 8
+    width  = (min(width,  1024) // 8) * 8
+    height = (min(height, 1024) // 8) * 8
     try:
         resp = requests.post(
             api_url,
@@ -136,8 +139,8 @@ def _call_huggingface(prompt: str, width: int, height: int, api_url: str):
             json={
                 "inputs": prompt,
                 "parameters": {
-                    "width":               min(width, 1024),
-                    "height":              min(height, 1024),
+                    "width":               width,
+                    "height":              height,
                     "num_inference_steps": 30,
                     "guidance_scale":      7.5,
                 }
