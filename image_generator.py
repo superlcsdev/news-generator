@@ -17,12 +17,12 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 IMAGE_WIDTH  = 1200
-IMAGE_HEIGHT = 632   # Facebook link-post landscape ratio (1.91:1)
+IMAGE_HEIGHT = 630   # Facebook link-post landscape ratio (1.91:1)
 TIMEOUT_SECS = 120
 MAX_RETRIES  = 3
 
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_API_URL   = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
+HF_API_URL   = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 SAFE_PROMPT = (
     "vibrant fresh healthy food flatlay, fruits vegetables superfoods, "
@@ -64,21 +64,61 @@ def _load_font(paths: list, size: int) -> ImageFont.FreeTypeFont:
 
 
 def _build_prompt(headline: str, category: str = "health") -> str:
-    """Turn a news headline into a background-image prompt. No text in prompt."""
-    category_styles = {
-        "health":    "vibrant healthy lifestyle photography, fresh vegetables fruits superfoods, "
-                     "bright natural lighting, clean minimal background, professional food/wellness photo",
-        "fitness":   "dynamic fitness workout scene, athletic energy, bright studio lighting, "
-                     "motivational sports photography, clean background",
-        "mental":    "calm serene mindfulness scene, soft pastel tones, peaceful nature, "
-                     "meditation wellness aesthetic, soft bokeh background",
-        "nutrition": "colorful nutritious meal flatlay, fresh ingredients, professional food photography, "
-                     "bright natural lighting, top-down view",
-        "medical":   "clean modern medical research background, blue tones, abstract science, "
-                     "professional healthcare aesthetic, no people",
-    }
-    style = category_styles.get(category.lower(), category_styles["health"])
-    return f"{style}, high resolution, no text, no words, no letters, photorealistic"
+    """
+    Build a Pollinations prompt with high visual variety.
+    Uses a pool of 32 distinct visual styles, rotating by date + headline
+    so consecutive posts always look different.
+    """
+    import hashlib
+    from datetime import datetime
+
+    STYLE_POOL = [
+        # Food & nutrition
+        "vibrant fresh fruit bowl flatlay, tropical colours, top-down view, bright natural light, no text",
+        "colourful smoothie bowls and superfoods on white marble, clean minimal aesthetic, no text",
+        "fresh vegetables at market, vivid greens and reds, rustic wooden background, no text",
+        "close-up macro shot of fresh herbs and spices, bokeh background, warm golden tones, no text",
+        "healthy meal prep containers, clean organised layout, bright kitchen setting, no text",
+        "exotic tropical fruits sliced open, vibrant saturated colours, overhead shot, no text",
+        "fresh salad greens with water droplets, macro photography, vivid colours, no text",
+        "wholesome breakfast spread, warm morning light, cosy kitchen atmosphere, no text",
+        # Nature & wellness
+        "serene forest path at dawn, soft morning mist, green light through trees, peaceful, no text",
+        "ocean sunrise over calm water, warm golden hour light, horizon view, no text",
+        "lush green rainforest waterfall, fresh and vibrant, nature photography, no text",
+        "wildflower meadow in soft sunlight, bokeh background, warm pastel tones, no text",
+        "mountain lake reflection at sunrise, crisp clean air, stunning landscape, no text",
+        "zen garden with smooth stones and bamboo, peaceful minimalist, soft natural light, no text",
+        "dewy leaves in morning light, macro nature photography, ethereal beauty, no text",
+        "cherry blossom branch against blue sky, soft pink tones, spring freshness, no text",
+        # Active lifestyle
+        "yoga on cliff overlooking ocean at sunrise, silhouette, inspiring, no text",
+        "morning run in city park, golden hour light, motion blur, energetic, no text",
+        "cycling through autumn forest path, warm golden leaves, dynamic motion, no text",
+        "swimming pool lane view, clear blue water, clean lines, healthy lifestyle, no text",
+        "hiking boots on mountain trail, adventure lifestyle, rugged nature, no text",
+        # Mindfulness & calm
+        "hands holding warm cup of tea, cosy morning light, soft shallow depth of field, no text",
+        "candle flame close-up, warm amber tones, soft bokeh, calm and peaceful, no text",
+        "open book beside window with rain, cosy interior, warm light, peaceful mood, no text",
+        "meditation stones balanced on calm water, zen minimalist, pastel tones, no text",
+        "soft sunrise light through curtains, peaceful morning awakening, warm tones, no text",
+        # Science & medical
+        "abstract blue teal medical science background, clean lines, professional, no text",
+        "DNA helix abstract visualization, blue glowing tones, modern science, no text",
+        "clean laboratory glassware with colourful liquids, professional research, no text",
+        # Lifestyle
+        "happy healthy people outdoors, warm sunlight, candid lifestyle photography, no text",
+        "farmer's market fresh produce, vibrant colours, community atmosphere, no text",
+        "aerial view of green parks, fresh urban greenery, top-down perspective, no text",
+    ]
+
+    # Rotate by date + headline so every post gets a different style
+    date_str  = datetime.now().strftime("%Y-%m-%d")
+    hash_seed = int(hashlib.md5((date_str + headline[:30]).encode()).hexdigest(), 16)
+    style     = STYLE_POOL[hash_seed % len(STYLE_POOL)]
+
+    return f"{style}, high resolution, photorealistic, vibrant"
 
 
 def _generate_via_huggingface(prompt: str, width: int, height: int):

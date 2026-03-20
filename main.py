@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from news_fetcher    import fetch_top_articles
-from ai_selector     import select_best_article
+from ai_selector     import select_best_article, save_posted_article
 from hook_writer     import generate_hook
 from image_generator import create_post_image
 
@@ -102,14 +102,10 @@ def run_pipeline(dry_run: bool = False, image_only: bool = False):
         print("  ⚠️  fb_poster.py not available — skipping post.")
         return
 
-    success = post_to_facebook(
-        image_path  = result_path,
-        caption     = hook,
-        article_url = best.get("url", ""),
-    )
-  
+    success = post_to_facebook(image_path=result_path, caption=hook)
     if success:
         print("  🎉 Posted successfully to Facebook!")
+        save_posted_article(best)
     else:
         print("  ❌ Facebook post failed.")
 
