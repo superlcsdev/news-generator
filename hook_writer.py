@@ -16,27 +16,34 @@ load_dotenv()
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-HOOK_PROMPT = """You are a Facebook health content writer for an audience of Filipino professionals 
-— nurses, IT professionals, engineers, architects, pharmacists, and other degree-holding 
-career-driven individuals based in Singapore and the Philippines.
+HOOK_PROMPT = """You are writing a Facebook post caption for Filipino professionals — nurses, 
+IT workers, engineers, architects, pharmacists — based in Singapore and the Philippines.
 
-Write a compelling Facebook post caption for this health news article.
+Write a caption for this health article that sounds like a real person wrote it, not AI.
 
-Tone guidelines:
-- Speak to their professional identity and ambition — not hardship or struggle
-- Frame health as performance, productivity, and career longevity — not survival
-- Peer-to-peer voice — like a smart colleague sharing something useful
-- Use data or surprising facts when relevant — this audience is analytical
-- Very occasional Filipino word for warmth (max 1 per post, only if completely natural)
+LANGUAGE RULES — very important:
+- Use simple, everyday English. Short sentences. Max 15 words per sentence.
+- Write like you're messaging a smart friend — casual but not sloppy
+- Contractions always: "you're" not "you are", "it's" not "it is", "don't" not "do not"
+- Be specific: "nurses on 12-hour shifts" not "busy professionals"
+- NEVER use these words: leverage, optimise, empower, unlock, holistic, sustainable,
+  transformative, actionable, synergy, catalyse, utilise, impactful, robust, comprehensive
+- Never start with "Are you..." or "Did you know..." — too generic, sounds like AI
+- One idea per sentence. If a sentence is over 15 words, break it into two.
+- Very occasional Filipino word for warmth (max 1 per post, only if it fits naturally)
   e.g. "Kaya mo ito." — never heavy Taglish
-- Never mention OFW hardship, remittance, or domestic worker context
+
+CONTENT RULES:
+- Speak to their professional life — health as career fuel, not just wellness
+- No hardship framing. No OFW struggle. No remittance mentions.
+- A surprising fact or a sharp honest observation works better than motivation
 
 Structure:
-- Line 1: Hook — surprising stat, professional angle, or sharp observation. NO emoji on first line.
-- Lines 2–3: Brief insight connecting to their professional life
-- Last line: CTA that respects their intelligence (not "share with someone who needs it")
+- Line 1: One strong opening line. No emoji here. Not a question. Something that makes them stop scrolling.
+- Lines 2–3: Two short sentences adding context. Keep it grounded and real.
+- Last line: Short CTA. Something a real person would actually say.
 
-Use 2–3 emojis naturally. Max 4 sentences total. Do NOT mention the source website.
+Use 2–3 emojis. Max 4 sentences total. Don't mention the source website.
 
 Article title  : {title}
 Article summary: {summary}
@@ -82,20 +89,23 @@ def _call_openrouter(prompt: str) -> str | None:
 
 
 def _template_hook(article: dict) -> str:
-    """Professional-tone fallback templates for Filipino professionals."""
+    """Simple, human-sounding fallback templates for Filipino professionals."""
     title = article["title"]
     templates = [
-        f"Most high-performing professionals overlook this. 👀 {title}. "
-        f"Your career depends on your output — and your output depends on your health. 💡 "
-        f"Worth a read if you take your performance seriously.",
+        f"Most professionals ignore this until it's too late. 👀\n"
+        f"{title}.\n"
+        f"Your body keeps the score — especially after years of long shifts and late nights. 💡\n"
+        f"Save this. Read it when you have 2 minutes.",
 
-        f"The research is clear, and it affects every professional in a demanding career. 🧠 {title}. "
-        f"Small evidence-based habits compound into significant long-term results. "
-        f"Save this — your future self will thank you. 🌿",
-
-        f"High earners who ignore this pay for it later — literally. ⚡ {title}. "
-        f"Your skills took years to build. Protect the body and mind behind them. 💚 "
+        f"This one's for anyone working long hours and wondering why they're always tired. 🧠\n"
+        f"{title}.\n"
+        f"Small habits compound. The ones you skip do too. 🌿\n"
         f"Tag a colleague who needs to see this.",
+
+        f"High performers miss this more than anyone else. ⚡\n"
+        f"{title}.\n"
+        f"Your skills are only as good as the person carrying them. Take care of that person. 💚\n"
+        f"Worth reading — drop a comment if this hits close to home.",
     ]
     idx = int(hashlib.md5(title.encode()).hexdigest(), 16) % len(templates)
     return templates[idx]
