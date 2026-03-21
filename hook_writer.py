@@ -1,10 +1,13 @@
 """
 hook_writer.py
-Generates an engaging Facebook hook caption for an article.
+Generates an engaging Facebook hook caption for a health article.
+Audience: Filipino professionals (nurses, IT, engineers, etc.) in SG + PH.
+Tone: Peer-to-peer, ambitious, analytical — not OFW hardship framing.
 Uses Gemini → OpenRouter → template fallback.
 """
 
 import os
+import hashlib
 import requests
 from dotenv import load_dotenv
 
@@ -13,21 +16,32 @@ load_dotenv()
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-HOOK_PROMPT = """You are a Facebook health content writer specialising in viral posts.
+HOOK_PROMPT = """You are a Facebook health content writer for an audience of Filipino professionals 
+— nurses, IT professionals, engineers, architects, pharmacists, and other degree-holding 
+career-driven individuals based in Singapore and the Philippines.
 
 Write a compelling Facebook post caption for this health news article.
-The caption must:
-- Start with a hook (question, shocking fact, or bold statement) — NO emojis in first line
-- Be 3–5 sentences max
-- End with a call to action (e.g. "Share this with someone who needs it!")
-- Use 2–3 relevant emojis naturally throughout
-- Sound human, warm, and relatable — NOT like a news headline
-- Do NOT mention the source website
+
+Tone guidelines:
+- Speak to their professional identity and ambition — not hardship or struggle
+- Frame health as performance, productivity, and career longevity — not survival
+- Peer-to-peer voice — like a smart colleague sharing something useful
+- Use data or surprising facts when relevant — this audience is analytical
+- Very occasional Filipino word for warmth (max 1 per post, only if completely natural)
+  e.g. "Kaya mo ito." — never heavy Taglish
+- Never mention OFW hardship, remittance, or domestic worker context
+
+Structure:
+- Line 1: Hook — surprising stat, professional angle, or sharp observation. NO emoji on first line.
+- Lines 2–3: Brief insight connecting to their professional life
+- Last line: CTA that respects their intelligence (not "share with someone who needs it")
+
+Use 2–3 emojis naturally. Max 4 sentences total. Do NOT mention the source website.
 
 Article title  : {title}
 Article summary: {summary}
 
-Write ONLY the caption. No preamble, no quotes around it."""
+Write ONLY the caption. No preamble, no quotes."""
 
 
 def _call_gemini(prompt: str) -> str | None:
@@ -68,21 +82,21 @@ def _call_openrouter(prompt: str) -> str | None:
 
 
 def _template_hook(article: dict) -> str:
-    """Fallback template-based hook when no AI key is available."""
+    """Professional-tone fallback templates for Filipino professionals."""
     title = article["title"]
     templates = [
-        f"Did you know? 👀 {title}. This is something everyone should be aware of! "
-        f"💪 Small changes can make a BIG difference to your health. Share this with someone who needs it! ❤️",
+        f"Most high-performing professionals overlook this. 👀 {title}. "
+        f"Your career depends on your output — and your output depends on your health. 💡 "
+        f"Worth a read if you take your performance seriously.",
 
-        f"This changes everything! 🔥 {title}. "
-        f"Your health is your greatest wealth — don't ignore this. 🌿 "
-        f"Tag a friend who needs to see this!",
+        f"The research is clear, and it affects every professional in a demanding career. 🧠 {title}. "
+        f"Small evidence-based habits compound into significant long-term results. "
+        f"Save this — your future self will thank you. 🌿",
 
-        f"Health alert! ⚠️ {title}. "
-        f"The science is clear — and it's easier than you think to take action. 💚 "
-        f"Save this post and share it with your loved ones!",
+        f"High earners who ignore this pay for it later — literally. ⚡ {title}. "
+        f"Your skills took years to build. Protect the body and mind behind them. 💚 "
+        f"Tag a colleague who needs to see this.",
     ]
-    import hashlib
     idx = int(hashlib.md5(title.encode()).hexdigest(), 16) % len(templates)
     return templates[idx]
 
@@ -109,9 +123,18 @@ def generate_hook(article: dict) -> str:
 
 
 if __name__ == "__main__":
-    test_article = {
-        "title":   "New Study: Daily 20-Minute Walk Reduces Heart Disease Risk by 35%",
-        "summary": "Researchers found that consistent moderate walking significantly lowers cardiovascular risk.",
-        "url":     "https://example.com/article",
-    }
-    print(generate_hook(test_article))
+    test_articles = [
+        {
+            "title":   "New Study: Sleep Deprivation Reduces Cognitive Performance by 30%",
+            "summary": "Researchers found chronic sleep loss significantly impairs decision-making in professionals.",
+            "url":     "https://example.com/article",
+        },
+        {
+            "title":   "Daily 20-Minute Walk Reduces Heart Disease Risk by 35%",
+            "summary": "Consistent moderate walking significantly lowers cardiovascular risk even in sedentary jobs.",
+            "url":     "https://example.com/article2",
+        },
+    ]
+    for a in test_articles:
+        print(f"\n── {a['title'][:50]} ──")
+        print(generate_hook(a))
