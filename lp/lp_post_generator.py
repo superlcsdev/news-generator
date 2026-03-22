@@ -376,7 +376,10 @@ def generate_news_hook(article: dict) -> dict:
         f"5. NO product/business/opportunity mentions at all\n\n"
         f"Output format (use exactly):\n"
         f"POST: [post body — max 4 sentences + 1 question]\n"
-        f"CAPTION: [2–8 words]"
+        f"CAPTION: [2–6 words — conversational reaction, NOT a news headline. "
+        f"Sound like a person, not a journalist. "
+        f"Optional Taglish. Examples: 'Nararamdaman na natin.', 'This one hits close.', "
+        f"'Feels familiar.', 'Totoo 'to.', 'Ganito talaga ngayon.']"
     )
 
     raw = call_gemini(user_msg, temperature=0.88, max_tokens=350)
