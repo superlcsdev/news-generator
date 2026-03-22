@@ -1,0 +1,32 @@
+name: "LP — Sunday Faith Post"
+
+on:
+  schedule:
+    # 11:00 PM Saturday UTC = 7:00 AM Sunday SGT
+    - cron: '0 23 * * 6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run'
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  faith:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+      - name: Generate and post Sunday faith post
+        env:
+          GEMINI_API_KEY:          ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY:      ${{ secrets.OPENROUTER_API_KEY }}
+          FB_LP_PAGE_ID:           ${{ secrets.FB_LP_PAGE_ID }}
+          FB_LP_PAGE_ACCESS_TOKEN: ${{ secrets.FB_LP_PAGE_ACCESS_TOKEN }}
+        run: |
+          cd lp && python lp_main.py --type faith \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

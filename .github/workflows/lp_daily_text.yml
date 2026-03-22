@@ -1,0 +1,46 @@
+## FILE 1: .github/workflows/lp_daily_text.yml
+## Paste into your news-generator repo as-is
+
+name: "LP — Daily Text Post"
+
+on:
+  schedule:
+    # 12:00 UTC = 8:00 PM SGT  ← 2hrs AFTER health news (6 PM SGT) — no conflict
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      post_format:
+        description: 'Format: A / B / BW / C / D / E / any'
+        default: 'any'
+      post_hook:
+        description: 'Hook: HUMOR / PAIN / DREAM / WISDOM / PRIDE / any'
+        default: 'any'
+      dry_run:
+        description: 'Dry run (no FB post)'
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+
+      - name: Generate and post
+        env:
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY:       ${{ secrets.OPENROUTER_API_KEY }}
+          FB_LP_PAGE_ID:            ${{ secrets.FB_LP_PAGE_ID }}
+          FB_LP_PAGE_ACCESS_TOKEN:  ${{ secrets.FB_LP_PAGE_ACCESS_TOKEN }}
+          HF_API_TOKEN:             ${{ secrets.HF_API_TOKEN }}
+        run: |
+          cd lp && python lp_main.py \
+            --type text \
+            --format "${{ github.event.inputs.post_format || 'any' }}" \
+            --hook   "${{ github.event.inputs.post_hook   || 'any' }}" \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
