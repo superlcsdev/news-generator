@@ -43,11 +43,25 @@ HIGH_VALUE = {
     "filipino": 2, "pinoy": 2,
 }
 
+# Hard reject — article immediately discarded if any of these appear in title/summary
 NEGATIVE_KEYWORDS = [
     "murder", "crime", "rape", "scandal", "corruption",
     "war", "bomb", "terror", "shooting", "earthquake",
     "typhoon", "flood", "death toll", "killed",
+    # Sports — not relevant to LP couple brand audience
+    "wnba", "nba", "pba", "nfl", "fifa", "ufc", "boxing match",
+    "basketball", "football game", "tennis tournament", "golf tournament",
+    # Entertainment / celebrity — not relevant
+    "celebrity", "actor", "actress", "showbiz", "box office",
+    "concert", "album", "Grammy", "Oscar",
+    # Political/opinion pieces — too divisive
+    "impeach", "senate hearing", "congressional", "partido",
+    "election recount", "opposition", "administration critic",
 ]
+
+# Minimum score required — article must be genuinely relevant, not just keyword-adjacent
+# Score of 0 or 1 means it matched "philippines" or "singapore" only — too weak
+MIN_SCORE = 3
 
 # Separate history file — never conflicts with health news post_history.json
 HISTORY_FILE = "lp_post_history.json"
@@ -145,7 +159,7 @@ def fetch_top_articles(max_articles: int = 5) -> list[dict]:
                 }
 
                 score = _score(article, src["weight"])
-                if score < 0:
+                if score < MIN_SCORE:
                     continue
 
                 article["score"] = score

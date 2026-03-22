@@ -194,7 +194,10 @@ def run_news_post(dry_run: bool):
     print("\n[1/5] Fetching LP news articles...")
     articles = fetch_top_articles(max_articles=5)
     if not articles:
-        print("❌ No articles fetched. Exiting."); sys.exit(1)
+        print("  ⚠️ No relevant articles found today. Skipping news post.")
+        print("  (This is normal — the filter rejected all articles as off-topic.)")
+        print("  The daily text post will still run at 8 PM SGT as scheduled.")
+        sys.exit(0)  # Exit cleanly — not a failure, just nothing to post
 
     best = articles[0]
     print(f"  Selected: {best['title'][:70]}")
