@@ -56,16 +56,18 @@ def _safety_check(post: str, caption: str) -> tuple[bool, str]:
         if term in combined:
             return False, f"Forbidden term detected: '{term}'"
 
-    # Check for solo "I" pronoun as narrative subject — must always be "we"
+    # Check for solo "I" or "My" pronoun as narrative subject — must always be "we/our"
     # Strip quoted speech first (e.g. "I said..." is okay inside dialogue)
-    # Then check if "I" appears as a standalone narrative pronoun
     import re as _re
-    post_no_quotes = _re.sub(r'"[^"]*"', '', post)  # remove quoted speech
-    post_no_quotes = _re.sub(r"'[^']*'", '', post_no_quotes)  # remove single-quoted
-    # Count standalone "I" — if more than 1 occurrence it's narrative, not incidental
-    i_matches = _re.findall(r'\bI\b', post_no_quotes)
+    post_no_quotes = _re.sub(r'"[^"]*"', '', post)
+    post_no_quotes = _re.sub(r"'[^']*'", '', post_no_quotes)
+    # Flag if "I" appears more than once OR "My" appears as a possessive narrator
+    i_matches  = _re.findall(r'\bI\b', post_no_quotes)
+    my_matches = _re.findall(r'\bMy\b', post_no_quotes)
     if len(i_matches) > 1:
         return False, f"Post uses 'I' {len(i_matches)} times — must speak as a couple using 'we'"
+    if len(my_matches) > 0:
+        return False, f"Post uses 'My' — must use 'our' to speak as a couple"
 
     return True, ""
 
@@ -117,15 +119,17 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
     if fmt == "B":
         format_extra = (
             "CRITICAL FOR FORMAT B — READ CAREFULLY:\n"
-            "- The couple tells the story TOGETHER from a shared 'we' perspective\n"
-            "- NEVER use 'I' as a narrative subject — not even once\n"
-            "- NEVER write 'I watched her...' or 'I noticed she...' — that is observer framing\n"
-            "- WRONG: 'She was amazing. I was not.' — one person narrating the other\n"
-            "- RIGHT: 'She handled it in minutes. We still don't know how she does it.'\n"
+            "- The couple tells the story TOGETHER from a shared 'we/our' perspective\n"
+            "- NEVER use 'I' or 'My' — not even once\n"
+            "- NEVER write 'My voice...' or 'I watched...' — that is one person narrating\n"
+            "- WRONG: 'My voice decided to go on vacation.' — solo narrator\n"
+            "- WRONG: 'She was amazing. I was not.' — observer framing\n"
+            "- RIGHT: 'Our voices both disappeared. The audience was very patient.'\n"
             "- RIGHT: 'We both panicked. She recovered faster. Of course.'\n"
-            "- The humor comes from the couple dynamic — one doing something the other admires or can't match\n"
-            "- Frame admiration, not observation. 'We couldn't believe she did it' not 'I watched her do it'\n"
-            "- Caption: 2-5 words, reaction, often Taglish. The punchline is in the POST.\n\n"
+            "- RIGHT: 'We couldn't get through a sentence. We still laugh about it.'\n"
+            "- The humor comes from the COUPLE sharing the embarrassment together\n"
+            "- Use 'we', 'our', 'us' throughout — every sentence\n"
+            "- Caption: 2-5 words, reaction, often Taglish. Punchline is in the POST.\n\n"
         )
     elif fmt == "BW":
         format_extra = (
