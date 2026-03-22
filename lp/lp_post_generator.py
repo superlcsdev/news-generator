@@ -47,13 +47,21 @@ FORBIDDEN_TERMS = [
 def _safety_check(post: str, caption: str) -> tuple[bool, str]:
     """
     Returns (is_safe, reason).
-    Checks post + caption for any forbidden terms.
-    Case-insensitive. Partial match counts.
+    Checks post + caption for forbidden terms and brand voice violations.
     """
     combined = (post + " " + caption).lower()
+
+    # Forbidden business/product terms
     for term in FORBIDDEN_TERMS:
         if term in combined:
             return False, f"Forbidden term detected: '{term}'"
+
+    # Check for solo "I" pronoun — must always be "we"
+    # Matches " I " as a standalone word (not part of another word)
+    import re as _re
+    if _re.search(r'\bI\b', post):
+        return False, "Post uses 'I' instead of 'we' — must speak as a couple"
+
     return True, ""
 
 
@@ -99,13 +107,35 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
     if fmt in ("B", "BW", "D", "A"):
         story_context = get_seed_context(fmt)
 
+    # Format-specific extra rules
+    format_extra = ""
+    if fmt == "B":
+        format_extra = (
+            "CRITICAL FOR FORMAT B:\n"
+            "- The couple tells the story TOGETHER — always 'we', never 'I' observing the other\n"
+            "- The humor must come from BOTH of them sharing the experience, not one watching the other fail\n"
+            "- WRONG: 'She struggled and I watched' — this makes one person look bad\n"
+            "- RIGHT: 'We both struggled' or 'She did something amazing that made me feel bad about myself'\n"
+            "- If referencing a moment where one person did better, frame it as the other admiring them — not mocking them\n"
+            "- The punchline lands in the POST. Caption is the reaction (2-5 words, often Taglish).\n\n"
+        )
+    elif fmt == "BW":
+        format_extra = (
+            "CRITICAL FOR FORMAT BW:\n"
+            "- Start with a funny couple moment (use 'we', never 'I')\n"
+            "- End with a quiet insight that reframes the moment\n"
+            "- The laugh opens the door. The wisdom is what they save.\n"
+            "- Both parts must speak as a couple — never one person observing the other.\n\n"
+        )
+
     user_msg = (
         f"Generate exactly 1 Facebook post for @lawrenceprecioussia.\n\n"
         f"FORMAT: {fmt} — {FORMATS[fmt]}\n"
         f"EMOTION HOOK: {hook}\n\n"
         + (f"{story_context}\n\n" if story_context else "")
+        + format_extra
         + f"Strict rules:\n"
-        f"- Always 'we' — never 'I'\n"
+        f"- Always 'we' — never 'I' — this is a couple speaking together, not one person narrating\n"
         f"- English body only. Taglish allowed in CAPTION only.\n"
         f"- Zero product/business/opportunity mentions\n"
         f"- Max 4 sentences in POST body\n"
