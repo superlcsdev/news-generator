@@ -236,6 +236,29 @@ def run_news_post(dry_run: bool):
         print("\n❌ Post failed.")
 
 
+def run_cta_post(dry_run: bool):
+    # Bi-weekly gate — skip on odd ISO weeks
+    week = datetime.date.today().isocalendar()[1]
+    if not dry_run and week % 2 != 0:
+        print(f"  Odd week ({week}) — skipping CTA post this Sunday.")
+        return
+
+    print("\n[1/2] Loading CTA post...")
+    result = get_cta_post()
+    fb_msg = f"{result['caption']}\n\n{result['post']}"
+    print(f"  CAPTION: {result['caption']}")
+    print(f"  POST preview: {result['post'][:120]}...")
+
+    if dry_run:
+        print("\n[DRY RUN ✓] Skipping Facebook post.")
+        print(f"\nFull message:\n{fb_msg}")
+        return
+
+    print("\n[2/2] Posting to Facebook...")
+    ok = lp_post_text(fb_msg)
+    print("\n✅ Done!" if ok else "\n❌ Post failed.")
+
+
 def run_faith_post(dry_run: bool):
     print("\n[1/3] Generating Sunday faith post...")
     result = generate_faith_post()
