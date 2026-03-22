@@ -16,52 +16,71 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── RSS Sources — Filipino working professional + Singapore focus ──────────────
+# ── RSS Sources — focused on working professional and financial content ────────
 RSS_SOURCES = [
-    {"url": "https://www.rappler.com/arc/outboundfeeds/rss/",     "source": "Rappler",          "weight": 1.2},
-    {"url": "https://newsinfo.inquirer.net/feed",                  "source": "Inquirer",         "weight": 1.1},
-    {"url": "https://businessmirror.com.ph/feed/",                 "source": "BusinessMirror",   "weight": 1.0},
-    {"url": "https://www.channelnewsasia.com/rss/8395986",         "source": "CNA Singapore",    "weight": 1.1},
-    {"url": "https://feeds.feedburner.com/entrepreneur/latest",    "source": "Entrepreneur",     "weight": 0.9},
-    {"url": "https://hbr.org/rss/topic/work-life-balance",        "source": "HBR",              "weight": 1.0},
-    {"url": "https://www.bworldonline.com/feed/",                  "source": "BusinessWorld PH", "weight": 1.0},
-    {"url": "https://mb.com.ph/feed/",                             "source": "Manila Bulletin",  "weight": 0.9},
+    # Philippine business and financial news — highest relevance
+    {"url": "https://businessmirror.com.ph/feed/",                 "source": "BusinessMirror",   "weight": 1.3},
+    {"url": "https://www.bworldonline.com/feed/",                  "source": "BusinessWorld PH", "weight": 1.3},
+    # Singapore working life
+    {"url": "https://www.channelnewsasia.com/rss/8395986",         "source": "CNA Singapore",    "weight": 1.2},
+    # Global work/career/leadership
+    {"url": "https://hbr.org/rss/topic/work-life-balance",        "source": "HBR Work-Life",    "weight": 1.2},
+    {"url": "https://feeds.feedburner.com/entrepreneur/latest",    "source": "Entrepreneur",     "weight": 1.0},
+    # Philippine general news — lower weight, more noise
+    {"url": "https://newsinfo.inquirer.net/feed",                  "source": "Inquirer",         "weight": 0.8},
+    # Rappler removed — too much entertainment/politics noise for this audience
 ]
 
 # ── Viral scoring keywords — tuned for LP audience pain points ───────────────
 HIGH_VALUE = {
-    "salary": 3, "income": 3, "wages": 2, "minimum wage": 3,
-    "savings": 3, "debt": 2, "inflation": 3, "cost of living": 3,
-    "ofw": 3, "overseas filipino": 3, "remittance": 2,
-    "burnout": 3, "work life balance": 3, "resignation": 2,
-    "quiet quitting": 2, "remote work": 2, "work from home": 2,
-    "overworked": 2, "underpaid": 3, "job stress": 2,
-    "side hustle": 3, "extra income": 3, "entrepreneur": 2,
-    "small business": 2, "freelance": 2, "financial freedom": 3,
-    "investment": 2, "family": 2, "marriage": 2,
-    "work family balance": 3, "philippines": 1, "singapore": 1,
-    "filipino": 2, "pinoy": 2,
+    # Financial reality — highest value
+    "salary": 4, "income": 4, "wages": 3, "minimum wage": 4,
+    "savings": 4, "debt": 3, "inflation": 4, "cost of living": 4,
+    "peso": 3, "exchange rate": 3,
+    # OFW and Singapore working life
+    "ofw": 4, "overseas filipino": 4, "remittance": 3,
+    "singapore worker": 4, "foreign worker": 3, "work pass": 3,
+    # Work-life pain points
+    "burnout": 4, "work life balance": 4, "resignation": 3,
+    "quiet quitting": 3, "remote work": 3, "work from home": 3,
+    "overworked": 3, "underpaid": 4, "job stress": 3,
+    "layoff": 4, "retrenchment": 4, "redundancy": 3,
+    # Building something
+    "side hustle": 4, "extra income": 4, "entrepreneur": 3,
+    "small business": 3, "freelance": 3,
+    "self employed": 3, "startup": 2,
+    # Family and time
+    "work family balance": 4, "parenting": 2, "family income": 3,
+    "financial stress": 4, "money stress": 4,
+    # Geography — lower value, just context
+    "philippines": 1, "singapore": 1, "filipino": 2, "pinoy": 2,
 }
 
 # Hard reject — article immediately discarded if any of these appear in title/summary
 NEGATIVE_KEYWORDS = [
+    # Violence and disaster
     "murder", "crime", "rape", "scandal", "corruption",
     "war", "bomb", "terror", "shooting", "earthquake",
     "typhoon", "flood", "death toll", "killed",
-    # Sports — not relevant to LP couple brand audience
-    "wnba", "nba", "pba", "nfl", "fifa", "ufc", "boxing match",
-    "basketball", "football game", "tennis tournament", "golf tournament",
-    # Entertainment / celebrity — not relevant
+    # Sports
+    "wnba", "nba", "pba", "nfl", "fifa", "ufc",
+    "basketball game", "football game", "tennis tournament",
+    "golf tournament", "boxing match", "athlete",
+    # Entertainment / celebrity
     "celebrity", "actor", "actress", "showbiz", "box office",
-    "concert", "album", "Grammy", "Oscar",
-    # Political/opinion pieces — too divisive
-    "impeach", "senate hearing", "congressional", "partido",
-    "election recount", "opposition", "administration critic",
+    "concert tour", "album release", "grammy", "oscar",
+    "richard mercado", "festival parade",
+    # Geopolitics — too divisive, off-brand
+    "trump", "iran", "missile", "nuclear", "military strike",
+    "senate hearing", "impeach", "opposition leader",
+    # Off-topic lifestyle
+    "strawberry festival", "food festival", "tourism",
+    "recipe", "restaurant review",
 ]
 
-# Minimum score required — article must be genuinely relevant, not just keyword-adjacent
-# Score of 0 or 1 means it matched "philippines" or "singapore" only — too weak
-MIN_SCORE = 3
+# Minimum score — must genuinely match audience keywords, not just geography
+# Score of 5+ means at least one strong keyword (salary=4 + philippines=1)
+MIN_SCORE = 5
 
 # Separate history file — never conflicts with health news post_history.json
 HISTORY_FILE = "lp_post_history.json"
