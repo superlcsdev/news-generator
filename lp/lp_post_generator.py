@@ -56,11 +56,16 @@ def _safety_check(post: str, caption: str) -> tuple[bool, str]:
         if term in combined:
             return False, f"Forbidden term detected: '{term}'"
 
-    # Check for solo "I" pronoun — must always be "we"
-    # Matches " I " as a standalone word (not part of another word)
+    # Check for solo "I" pronoun as narrative subject — must always be "we"
+    # Strip quoted speech first (e.g. "I said..." is okay inside dialogue)
+    # Then check if "I" appears as a standalone narrative pronoun
     import re as _re
-    if _re.search(r'\bI\b', post):
-        return False, "Post uses 'I' instead of 'we' — must speak as a couple"
+    post_no_quotes = _re.sub(r'"[^"]*"', '', post)  # remove quoted speech
+    post_no_quotes = _re.sub(r"'[^']*'", '', post_no_quotes)  # remove single-quoted
+    # Count standalone "I" — if more than 1 occurrence it's narrative, not incidental
+    i_matches = _re.findall(r'\bI\b', post_no_quotes)
+    if len(i_matches) > 1:
+        return False, f"Post uses 'I' {len(i_matches)} times — must speak as a couple using 'we'"
 
     return True, ""
 
@@ -111,21 +116,24 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
     format_extra = ""
     if fmt == "B":
         format_extra = (
-            "CRITICAL FOR FORMAT B:\n"
-            "- The couple tells the story TOGETHER — always 'we', never 'I' observing the other\n"
-            "- The humor must come from BOTH of them sharing the experience, not one watching the other fail\n"
-            "- WRONG: 'She struggled and I watched' — this makes one person look bad\n"
-            "- RIGHT: 'We both struggled' or 'She did something amazing that made me feel bad about myself'\n"
-            "- If referencing a moment where one person did better, frame it as the other admiring them — not mocking them\n"
-            "- The punchline lands in the POST. Caption is the reaction (2-5 words, often Taglish).\n\n"
+            "CRITICAL FOR FORMAT B — READ CAREFULLY:\n"
+            "- The couple tells the story TOGETHER from a shared 'we' perspective\n"
+            "- NEVER use 'I' as a narrative subject — not even once\n"
+            "- NEVER write 'I watched her...' or 'I noticed she...' — that is observer framing\n"
+            "- WRONG: 'She was amazing. I was not.' — one person narrating the other\n"
+            "- RIGHT: 'She handled it in minutes. We still don't know how she does it.'\n"
+            "- RIGHT: 'We both panicked. She recovered faster. Of course.'\n"
+            "- The humor comes from the couple dynamic — one doing something the other admires or can't match\n"
+            "- Frame admiration, not observation. 'We couldn't believe she did it' not 'I watched her do it'\n"
+            "- Caption: 2-5 words, reaction, often Taglish. The punchline is in the POST.\n\n"
         )
     elif fmt == "BW":
         format_extra = (
             "CRITICAL FOR FORMAT BW:\n"
-            "- Start with a funny couple moment (use 'we', never 'I')\n"
+            "- Start with a funny couple moment using 'we' — never 'I'\n"
             "- End with a quiet insight that reframes the moment\n"
             "- The laugh opens the door. The wisdom is what they save.\n"
-            "- Both parts must speak as a couple — never one person observing the other.\n\n"
+            "- Both parts must speak as a couple — 'we realized', 'we learned', never 'I realized'\n\n"
         )
 
     user_msg = (
