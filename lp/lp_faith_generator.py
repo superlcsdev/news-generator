@@ -259,18 +259,36 @@ def _call_gemini(prompt: str) -> str | None:
 def _call_openrouter(prompt: str) -> str | None:
     if not OPENROUTER_API_KEY:
         return None
-    try:
-        resp = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "mistralai/mistral-7b-instruct:free",
-                  "messages": [{"role": "user", "content": FAITH_SYSTEM_PROMPT + "\n\n---\n\n" + prompt}]},
-            timeout=30,
-        )
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"  Warning: OpenRouter faith error: {e}")
-        return None
+
+    models = [
+        "mistralai/mistral-7b-instruct:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+    ]
+    full_prompt = FAITH_SYSTEM_PROMPT + "\n\n---\n\n" + prompt
+
+    for model in models:
+        try:
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": full_prompt}]},
+                timeout=30,
+            )
+            data = resp.json()
+            if "error" in data:
+                print(f"  Warning: OpenRouter [{model}] error: {data['error'].get('message', data['error'])}")
+                continue
+            choices = data.get("choices", [])
+            if not choices:
+                print(f"  Warning: OpenRouter [{model}] no choices returned.")
+                continue
+            content = choices[0].get("message", {}).get("content", "").strip()
+            if content:
+                return content
+        except Exception as e:
+            print(f"  Warning: OpenRouter [{model}] exception: {e}")
+
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

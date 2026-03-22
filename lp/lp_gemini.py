@@ -99,8 +99,10 @@ def _try_gemini(user_message: str, temperature: float, max_tokens: int) -> str |
 def _try_openrouter(user_message: str) -> str | None:
     if not OPENROUTER_API_KEY:
         return None
+
+    full_prompt = f"{SYSTEM_PROMPT}\n\n---\n\n{user_message}"
+
     try:
-        full_prompt = f"{SYSTEM_PROMPT}\n\n---\n\n{user_message}"
         resp = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -108,12 +110,37 @@ def _try_openrouter(user_message: str) -> str | None:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "mistralai/mistral-7b-instruct:free",
+                # openrouter/free: zero-cost auto-router
+                # Routes to best available free model based on request type
+                # Basic chat → llama-3.3-70b, vision → gemma-3-27b, etc.
+                # Never bills — safe for accounts with no credits
+                "model": "openrouter/free",
                 "messages": [{"role": "user", "content": full_prompt}],
             },
             timeout=30,
         )
-        return resp.json()["choices"][0]["message"]["content"].strip()
+
+        data = resp.json()
+
+        # OpenRouter returns errors as {"error": {...}} not as HTTP error codes
+        if "error" in data:
+            print(f"  ⚠️ OpenRouter error: {data['error'].get('message', data['error'])}")
+            return None
+
+        choices = data.get("choices", [])
+        if not choices:
+            print(f"  ⚠️ OpenRouter returned no choices. Full response: {data}")
+            return None
+
+        content = choices[0].get("message", {}).get("content", "").strip()
+        if content:
+            model_used = data.get("model", "unknown")
+            print(f"  ✅ OpenRouter succeeded (routed to: {model_used})")
+            return content
+
+        print("  ⚠️ OpenRouter returned empty content.")
+        return None
+
     except Exception as e:
-        print(f"  ⚠️ OpenRouter error: {e}")
+        print(f"  ⚠️ OpenRouter exception: {e}")
         return None
