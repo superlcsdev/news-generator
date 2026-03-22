@@ -220,53 +220,82 @@ POLL_FALLBACK = {
 
 def generate_poll_post() -> dict:
     """
-    Generate a poll-style post with 3–4 emoji options.
+    Generate a poll-style post with 3-4 emoji options.
     Returns: {question, options, caption, fb_message}
     """
-    day = datetime.date.today().timetuple().tm_yday
+    day   = datetime.date.today().timetuple().tm_yday
     topic = POLL_TOPICS[day % len(POLL_TOPICS)]
 
     user_msg = (
         f"Generate a poll-style Facebook post for @lawrenceprecioussia.\n"
         f"Topic: {topic}\n\n"
         f"Rules:\n"
-        f"- Question must be fun and relatable — no wrong answers\n"
-        f"- 4 short options (A, B, C, D) — each funny or painfully relatable\n"
+        f"- Question: fun, relatable, no wrong answers, complete sentence\n"
+        f"- 4 short options (A, B, C, D) — funny or painfully relatable\n"
+        f"- Each option: maximum 8 words, no punctuation at the end\n"
         f"- English throughout. Caption can be 1 Taglish phrase.\n"
-        f"- Zero business/product/opportunity mentions ever\n\n"
-        f"Output format (use exactly):\n"
-        f"QUESTION: [one sentence]\n"
-        f"A: [option]\n"
-        f"B: [option]\n"
-        f"C: [option]\n"
-        f"D: [option]\n"
-        f"CAPTION: [2–6 words]"
+        f"- Zero business/product/opportunity mentions\n\n"
+        f"Output EXACTLY in this format, nothing else:\n"
+        f"QUESTION: [complete question here]\n"
+        f"A: [option text]\n"
+        f"B: [option text]\n"
+        f"C: [option text]\n"
+        f"D: [option text]\n"
+        f"CAPTION: [2-5 words]"
     )
 
-    raw = call_gemini(user_msg, temperature=0.95, max_tokens=300)
+    # Increased max_tokens to 400 — poll needs more room than a single post
+    raw = call_gemini(user_msg, temperature=0.92, max_tokens=400)
 
     if not raw:
-        print("  ⚠️ Using poll fallback.")
+        print("  ⚠️ Gemini unavailable — using poll fallback.")
         return POLL_FALLBACK
 
     print(f"\n--- Gemini raw (poll) ---\n{raw}\n---")
 
-    question = _parse(raw, "QUESTION", "A")
-    opt_a    = _parse(raw, r"^A",  "B")   if re.search(r"^A:", raw, re.M) else _parse(raw, r"\nA", "B")
-    opt_b    = _parse(raw, r"^B",  "C")   if re.search(r"^B:", raw, re.M) else _parse(raw, r"\nB", "C")
-    opt_c    = _parse(raw, r"^C",  "D")   if re.search(r"^C:", raw, re.M) else _parse(raw, r"\nC", "D")
-    opt_d    = _parse(raw, r"^D",  "CAPTION") if re.search(r"^D:", raw, re.M) else _parse(raw, r"\nD", "CAPTION")
-    caption  = _parse(raw, "CAPTION")
+    # Robust line-by-line parser — handles any whitespace/formatting variation
+    question = ""
+    opt_a = opt_b = opt_c = opt_d = ""
+    caption = ""
 
-    if not question:
+    for line in raw.strip().splitlines():
+        line = line.strip()
+        if line.upper().startswith("QUESTION:"):
+            question = line[9:].strip().strip('"')
+        elif re.match(r"^A[\s:.]", line, re.IGNORECASE):
+            opt_a = re.sub(r"^A[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+        elif re.match(r"^B[\s:.]", line, re.IGNORECASE):
+            opt_b = re.sub(r"^B[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+        elif re.match(r"^C[\s:.]", line, re.IGNORECASE):
+            opt_c = re.sub(r"^C[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+        elif re.match(r"^D[\s:.]", line, re.IGNORECASE):
+            opt_d = re.sub(r"^D[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+        elif line.upper().startswith("CAPTION:"):
+            caption = line[8:].strip().strip('"')
+
+    # Validate — if question or any option is missing, use fallback
+    missing = []
+    if not question: missing.append("question")
+    if not opt_a:    missing.append("option A")
+    if not opt_b:    missing.append("option B")
+    if not opt_c:    missing.append("option C")
+
+    if missing:
+        print(f"  ⚠️ Poll parse failed — missing: {', '.join(missing)}. Using fallback.")
         return POLL_FALLBACK
 
+    # Use fallback caption if missing
+    if not caption:
+        caption = "Which one are you?"
+
     options = [
-        f"🅐  {opt_a or 'Option A'}",
-        f"🅑  {opt_b or 'Option B'}",
-        f"🅒  {opt_c or 'Option C'}",
-        f"🅓  {opt_d or 'Option D'}",
+        f"🅐  {opt_a}",
+        f"🅑  {opt_b}",
+        f"🅒  {opt_c}",
     ]
+    if opt_d:
+        options.append(f"🅓  {opt_d}")
+
     fb_message = (
         f"{caption}\n\n"
         f"{question}\n\n"
@@ -274,7 +303,12 @@ def generate_poll_post() -> dict:
         + "\n\nComment your answer below 👇"
     )
 
-    return {"question": question, "options": options, "caption": caption, "fb_message": fb_message}
+    return {
+        "question":   question,
+        "options":    options,
+        "caption":    caption,
+        "fb_message": fb_message,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
