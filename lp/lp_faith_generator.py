@@ -237,11 +237,16 @@ def _call_gemini(prompt: str) -> str | None:
         return None
     try:
         resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GEMINI_API_KEY}",
             json={
                 "system_instruction": {"parts": [{"text": FAITH_SYSTEM_PROMPT}]},
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.80, "maxOutputTokens": 300, "topP": 0.90},
+                "generationConfig": {
+                    "temperature": 0.80,
+                    "maxOutputTokens": 500,
+                    "topP": 0.90,
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
             },
             timeout=30,
         )

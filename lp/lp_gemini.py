@@ -1,8 +1,15 @@
 """
 lp/lp_gemini.py
 Gemini API caller for @lawrenceprecioussia.
-Matches the exact pattern from hook_writer.py and ai_selector.py —
-same gemini-2.5-flash model, same OpenRouter fallback, same dotenv loading.
+
+Uses gemini-2.5-flash-lite — free tier, thinking OFF by default,
+optimized for structured output tasks (polls, post formatting).
+
+Root cause of previous truncation: gemini-2.5-flash has thinking ON
+by default and thinking tokens count against maxOutputTokens, eating
+the budget before output is generated. Flash-Lite avoids this entirely.
+
+Fallback: OpenRouter (mistral-7b-instruct:free)
 """
 
 import os
@@ -15,13 +22,16 @@ load_dotenv()
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-GEMINI_URL = (
+# gemini-2.5-flash-lite: free tier, thinking OFF by default, fast, reliable
+# thinkingBudget:0 added as an explicit safety net in every call
+GEMINI_MODEL = "gemini-2.5-flash-lite"
+GEMINI_URL   = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.5-flash:generateContent?key={key}"
+    f"{GEMINI_MODEL}:generateContent?key={{key}}"
 )
 
 
-def call_gemini(user_message: str, temperature: float = 0.92, max_tokens: int = 400) -> str | None:
+def call_gemini(user_message: str, temperature: float = 0.92, max_tokens: int = 500) -> str | None:
     """
     Call Gemini with the LP brand system prompt.
     Falls back to OpenRouter (mistral-7b) if Gemini fails.
@@ -53,11 +63,34 @@ def _try_gemini(user_message: str, temperature: float, max_tokens: int) -> str |
                     "temperature": temperature,
                     "maxOutputTokens": max_tokens,
                     "topP": 0.95,
+                    # Explicitly disable thinking — prevents thinking tokens
+                    # consuming the output budget on 2.5 models
+                    "thinkingConfig": {"thinkingBudget": 0},
                 },
             },
             timeout=30,
         )
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        data = resp.json()
+
+        # Surface API errors clearly in logs
+        if "error" in data:
+            print(f"  ⚠️ Gemini API error: {data['error'].get('message', data['error'])}")
+            return None
+
+        candidates = data.get("candidates", [])
+        if not candidates:
+            print(f"  ⚠️ Gemini returned no candidates. finishReason may be MAX_TOKENS.")
+            print(f"  ⚠️ Full response: {data}")
+            return None
+
+        # Check finish reason — MAX_TOKENS means output was cut off
+        finish_reason = candidates[0].get("finishReason", "")
+        if finish_reason == "MAX_TOKENS":
+            print(f"  ⚠️ Gemini hit MAX_TOKENS limit — response may be incomplete.")
+
+        text = candidates[0]["content"]["parts"][0]["text"].strip()
+        return text if text else None
+
     except Exception as e:
         print(f"  ⚠️ Gemini error: {e}")
         return None
@@ -67,7 +100,6 @@ def _try_openrouter(user_message: str) -> str | None:
     if not OPENROUTER_API_KEY:
         return None
     try:
-        # Prepend system prompt manually since OpenRouter uses messages format
         full_prompt = f"{SYSTEM_PROMPT}\n\n---\n\n{user_message}"
         resp = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
