@@ -237,7 +237,7 @@ def _gemini_image(prompt: str) -> Image.Image | None:
         from google.genai import types as gtypes
         client = gai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.5-flash-image",
+            model="gemini-2.5-flash-image-preview",
             contents=prompt,
             config=gtypes.GenerateContentConfig(
                 response_modalities=["IMAGE"],
