@@ -322,9 +322,9 @@ def main():
     parser = argparse.ArgumentParser(description="@lawrenceprecioussia Facebook Automation")
     parser.add_argument("--type",    default="text", choices=["text", "poll", "news", "cta", "faith"],
                         help="Post type")
-    parser.add_argument("--format",  default="any",
+    parser.add_argument("--format",  default=os.environ.get("POST_FORMAT", "any"),
                         help="Format: A / B / BW / C / D / E / any")
-    parser.add_argument("--hook",    default="any",
+    parser.add_argument("--hook",    default=os.environ.get("POST_HOOK", "any"),
                         help="Hook: HUMOR / PAIN / DREAM / WISDOM / PRIDE / any")
     parser.add_argument("--dry-run", action="store_true",
                         help="Generate without posting to Facebook")
