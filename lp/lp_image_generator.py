@@ -29,8 +29,11 @@ IMAGE_WIDTH  = 1080
 IMAGE_HEIGHT = 1080
 
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_SDXL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
-HF_SD21  = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-2-1"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# HuggingFace model endpoints
+HF_SDXL_LIGHTNING = "https://router.huggingface.co/hf-inference/models/ByteDance/SDXL-Lightning"
+HF_SD15           = "https://router.huggingface.co/hf-inference/models/stable-diffusion-v1-5/stable-diffusion-v1-5"
 
 SAFE_PROMPT = (
     "happy couple walking together in city park, warm golden hour sunlight, "
@@ -222,7 +225,38 @@ def _draw_logo_bar(draw: ImageDraw.ImageDraw, w: int, y_top: int, bar_h: int = 5
     draw.rectangle([(0, y_top), (w, y_top + 2)], fill=(180, 120, 40))
 
 
+def _gemini_image(prompt: str) -> Image.Image | None:
+    """
+    Primary image generator — Gemini 3.1 Flash Image Preview.
+    Free tier: ~500 requests/day. Returns inline base64 PNG.
+    Uses google-genai SDK (different from the text API).
+    """
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        from google import genai as gai
+        from google.genai import types as gtypes
+        client = gai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-image-preview",
+            contents=prompt,
+            config=gtypes.GenerateContentConfig(
+                response_modalities=["Image", "Text"]
+            ),
+        )
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                img = Image.open(BytesIO(part.inline_data.data)).convert("RGB")
+                return img.resize((IMAGE_WIDTH, IMAGE_HEIGHT), Image.LANCZOS)
+        print("  ⚠️ Gemini image: no image part in response")
+        return None
+    except Exception as e:
+        print(f"  ⚠️ Gemini image error: {e}")
+        return None
+
+
 def _hf_call(prompt: str, api_url: str) -> Image.Image | None:
+    """HuggingFace Inference API — used as fallback."""
     if not HF_API_TOKEN:
         return None
     w = (min(IMAGE_WIDTH, 1024) // 8) * 8
@@ -232,7 +266,9 @@ def _hf_call(prompt: str, api_url: str) -> Image.Image | None:
             api_url,
             headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
             json={"inputs": prompt, "parameters": {
-                "width": w, "height": h, "num_inference_steps": 30, "guidance_scale": 7.5,
+                "width": w, "height": h,
+                "num_inference_steps": 4,   # SDXL-Lightning uses 4 steps
+                "guidance_scale": 0,        # Lightning requires guidance_scale=0
             }},
             timeout=120,
         )
@@ -240,49 +276,51 @@ def _hf_call(prompt: str, api_url: str) -> Image.Image | None:
             img = Image.open(BytesIO(resp.content)).convert("RGB")
             return img.resize((IMAGE_WIDTH, IMAGE_HEIGHT), Image.LANCZOS)
         if resp.status_code == 503:
-            print("  HF model loading, waiting 25s...")
-            time.sleep(25)
-            resp2 = requests.post(api_url, headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
-                                  json={"inputs": prompt}, timeout=120)
+            print("  ⏳ HF model loading, waiting 20s...")
+            time.sleep(20)
+            resp2 = requests.post(
+                api_url,
+                headers={"Authorization": f"Bearer {HF_API_TOKEN}"},
+                json={"inputs": prompt},
+                timeout=120,
+            )
             if resp2.status_code == 200:
                 img = Image.open(BytesIO(resp2.content)).convert("RGB")
                 return img.resize((IMAGE_WIDTH, IMAGE_HEIGHT), Image.LANCZOS)
-        print(f"  HF HTTP {resp.status_code}")
+        print(f"  ⚠️ HF HTTP {resp.status_code}: {resp.text[:100]}")
     except Exception as e:
-        print(f"  HF error: {e}")
-    return None
-
-
-def _pollinations(prompt: str) -> Image.Image | None:
-    url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
-    params = {"width": IMAGE_WIDTH, "height": IMAGE_HEIGHT, "nologo": "true",
-              "enhance": "true", "seed": str(int(time.time()) % 99999), "model": "flux"}
-    for attempt in range(1, 3):
-        try:
-            print(f"  Pollinations attempt {attempt}/2...")
-            resp = requests.get(url, params=params, timeout=90)
-            if resp.status_code == 200:
-                img = Image.open(BytesIO(resp.content)).convert("RGB")
-                return img.resize((IMAGE_WIDTH, IMAGE_HEIGHT), Image.LANCZOS)
-        except requests.exceptions.ReadTimeout:
-            print(f"  Pollinations timeout attempt {attempt}...")
-        except Exception as e:
-            print(f"  Pollinations error: {e}")
-        time.sleep(5)
+        print(f"  ⚠️ HF error: {e}")
     return None
 
 
 def generate_background(prompt: str) -> Image.Image | None:
-    print("  Trying HuggingFace SDXL...")
-    img = _hf_call(prompt, HF_SDXL)
+    """
+    Image generation pipeline:
+    1. Gemini 3.1 Flash Image Preview (primary — free tier ~500/day)
+    2. HuggingFace SDXL-Lightning (fallback 1 — fast 4-step distilled)
+    3. HuggingFace SD 1.5 (fallback 2 — reliable, lightweight)
+    4. None → text card fallback handled by caller
+    """
+    print("  🎨 Trying Gemini image generation...")
+    img = _gemini_image(prompt)
     if img:
+        print(f"  ✅ Gemini image ({img.size[0]}x{img.size[1]}px)")
         return img
-    print("  Trying HuggingFace SD 2.1...")
-    img = _hf_call(SAFE_PROMPT, HF_SD21)
+
+    print("  🤗 Trying HuggingFace SDXL-Lightning...")
+    img = _hf_call(prompt, HF_SDXL_LIGHTNING)
     if img:
+        print(f"  ✅ SDXL-Lightning image ({img.size[0]}x{img.size[1]}px)")
         return img
-    print("  Trying Pollinations...")
-    return _pollinations(SAFE_PROMPT)
+
+    print("  🤗 Trying HuggingFace SD 1.5...")
+    img = _hf_call(SAFE_PROMPT, HF_SD15)
+    if img:
+        print(f"  ✅ SD 1.5 image ({img.size[0]}x{img.size[1]}px)")
+        return img
+
+    print("  ❌ All image providers failed — will use text card.")
+    return None
 
 
 def add_text_overlay(image: Image.Image, post_text: str, tone: str = "warm") -> Image.Image:
