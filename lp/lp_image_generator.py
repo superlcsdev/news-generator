@@ -360,7 +360,8 @@ def add_text_overlay(image: Image.Image, post_text: str, tone: str = "warm") -> 
 
 def create_post_image(post_text: str, output_path: str, use_text_card: bool = False, tone: str = "warm") -> str | None:
     if use_text_card:
-        return create_text_card(post_text, output_path)
+        # Format A/B explicitly requested text card — show full post text
+        return create_text_card(post_text, output_path, tone="warm")
 
     print(f'\nCreating LP image: "{post_text[:55]}..."')
     prompt = _build_prompt(post_text, tone=tone)
@@ -368,7 +369,8 @@ def create_post_image(post_text: str, output_path: str, use_text_card: bool = Fa
 
     if bg is None:
         print("  Image generation failed — falling back to text card.")
-        return create_text_card(post_text, output_path)
+        # Fallback for news/wisdom — show hook only, not full post
+        return create_text_card(post_text, output_path, tone=tone)
 
     final = add_text_overlay(bg, post_text, tone=tone)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -377,22 +379,20 @@ def create_post_image(post_text: str, output_path: str, use_text_card: bool = Fa
     return output_path
 
 
-def create_text_card(post_text: str, output_path: str) -> str | None:
+def create_text_card(post_text: str, output_path: str, tone: str = "warm") -> str | None:
     """
-    Dark card — Format A/B.
-    Layout (bottom to top):
-      ┌─────────────────────┐
-      │                     │
-      │   Bold post text    │  ← centred in upper space
-      │                     │
-      │─────────────────────│  ← gold line
-      │  LAWRENCE & PRECIOUS│  ← logo bar
-      │  YOUR BIZ MENTORS   │
-      │─────────────────────│
-      │  (no caption text)  │  ← caption is in FB message, not image
-      └─────────────────────┘
+    Dark card layout.
+    For Format A/B (tone=warm): shows full post text centred — the post IS the card.
+    For news/wisdom fallback (tone=serious/faith): shows only the short hook,
+    matching what add_text_overlay would show if HuggingFace had succeeded.
     """
     print(f'\nCreating text card: "{post_text[:55]}..."')
+
+    # Decide what text to show on the card
+    if tone == "warm":
+        display_text = post_text          # Format A/B — full text is the point
+    else:
+        display_text = _shorten_for_image(post_text, max_chars=70, tone=tone)
 
     img  = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), (12, 12, 16))
     draw = ImageDraw.Draw(img)
@@ -406,21 +406,23 @@ def create_text_card(post_text: str, output_path: str) -> str | None:
     logo_y_top = h - BOTTOM_PAD - LOGO_BAR_H
     _draw_logo_bar(draw, w, logo_y_top, LOGO_BAR_H)
 
-    # ── Post text centred in space above logo bar ─────────────────────────────
+    # ── Text centred in space above logo bar ──────────────────────────────────
     usable_top = 40
     usable_bot = logo_y_top - 20
     usable_h   = usable_bot - usable_top
 
-    font  = _load_font(FONT_EXTRABOLD, 64)
+    # Start font size — larger for short hooks, standard for full post text
+    start_size = 72 if tone != "warm" else 64
+    font  = _load_font(FONT_EXTRABOLD, start_size)
     max_w = w - SIDE_PAD * 2
-    lines = _wrap_text(draw, post_text, font, max_w)
+    lines = _wrap_text(draw, display_text, font, max_w)
 
     if len(lines) > 3:
-        font  = _load_font(FONT_EXTRABOLD, 52)
-        lines = _wrap_text(draw, post_text, font, max_w)
+        font  = _load_font(FONT_EXTRABOLD, 54)
+        lines = _wrap_text(draw, display_text, font, max_w)
     if len(lines) > 4:
-        font  = _load_font(FONT_EXTRABOLD, 42)
-        lines = _wrap_text(draw, post_text, font, max_w)
+        font  = _load_font(FONT_EXTRABOLD, 44)
+        lines = _wrap_text(draw, display_text, font, max_w)
 
     line_h      = int(font.size * 1.38)
     total_txt_h = len(lines) * line_h
