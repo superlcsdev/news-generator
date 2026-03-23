@@ -244,7 +244,6 @@ def _gemini_image(prompt: str) -> Image.Image | None:
                 image_config=gtypes.ImageConfig(
                     aspect_ratio="1:1",
                     image_size="1K",
-                    output_mime_type="image/png",
                 )
             ),
         )
