@@ -147,6 +147,7 @@ def run_text_post(fmt: str, hook: str, dry_run: bool):
     result = generate_text_post(post_format=fmt, hook=hook)
     print(f"\n  POST:    {result['post']}")
     print(f"  CAPTION: {result['caption']}")
+    print(f"  IMG HOOK: {result.get('image_hook', '(none)')}")
     print(f"  FORMAT:  {result['format']} | HOOK: {result['hook']}")
 
     # Use pure black text card for short punchy formats (A and B)
@@ -156,10 +157,13 @@ def run_text_post(fmt: str, hook: str, dry_run: bool):
     print(f"\n[2/4] {'Creating text card' if use_text_card else 'Generating image'}...")
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     img_path = str(OUTPUT_DIR / f"lp_post_{ts}.jpg")
-    saved = create_post_image(post_text=result["post"], output_path=img_path, use_text_card=use_text_card)
+    # Image always shows the short hook — full story goes in FB caption
+    image_text = result.get("image_hook") or result["post"]
+    saved = create_post_image(post_text=image_text, output_path=img_path, use_text_card=use_text_card)
     if not saved:
         print("❌ Image creation failed."); sys.exit(1)
 
+    # Facebook caption = Taglish reaction + full story (richer than the image)
     fb_msg = f"{result['caption']}\n\n{result['post']}" if result["caption"] else result["post"]
 
     if dry_run:

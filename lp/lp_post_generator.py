@@ -157,8 +157,9 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
         f"- Never use: leverage, empower, unlock, holistic, synergy, transformative\n"
         f"- Apply the Golden Test before finalising\n\n"
         f"Output format (use exactly):\n"
-        f"POST: [post body]\n"
-        f"CAPTION: [2–8 words]\n"
+        f"IMAGE_HOOK: [1 punchy sentence max 60 chars — the scroll-stopper that goes on the image card]\n"
+        f"POST: [full story for the Facebook caption — 4-6 sentences, richer detail, ends with a question]\n"
+        f"CAPTION: [2–5 words — Taglish reaction above the post. e.g. 'Siyempre sya pa.' / 'Kaso wala tayong choice.' / 'Totoo 'to.']\n"
         f"FORMAT: [{fmt}]\n"
         f"HOOK: [{hook}]"
     )
@@ -168,10 +169,11 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
     if raw:
         print(f"\n--- Gemini raw ---\n{raw}\n---")
         result = {
-            "post":    _parse(raw, "POST", "CAPTION"),
-            "caption": _parse(raw, "CAPTION", "FORMAT"),
-            "format":  fmt,
-            "hook":    hook,
+            "image_hook": _parse(raw, "IMAGE_HOOK", "POST"),
+            "post":       _parse(raw, "POST", "CAPTION"),
+            "caption":    _parse(raw, "CAPTION", "FORMAT"),
+            "format":     fmt,
+            "hook":       hook,
         }
         # Safety filter — retry once if forbidden terms detected
         is_safe, reason = _safety_check(result["post"], result["caption"])
@@ -180,10 +182,11 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
             raw2 = call_gemini(user_msg + "\n\nIMPORTANT: Do NOT mention any business, product, or opportunity. Keep it purely personal and relatable.", temperature=0.85)
             if raw2:
                 result = {
-                    "post":    _parse(raw2, "POST", "CAPTION"),
-                    "caption": _parse(raw2, "CAPTION", "FORMAT"),
-                    "format":  fmt,
-                    "hook":    hook,
+                    "image_hook": _parse(raw2, "IMAGE_HOOK", "POST"),
+                    "post":       _parse(raw2, "POST", "CAPTION"),
+                    "caption":    _parse(raw2, "CAPTION", "FORMAT"),
+                    "format":     fmt,
+                    "hook":       hook,
                 }
                 is_safe2, reason2 = _safety_check(result["post"], result["caption"])
                 if not is_safe2:
@@ -199,26 +202,39 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
 def _text_fallback(fmt: str, hook: str) -> dict:
     """Pre-written fallback posts per format — no AI needed."""
     fallbacks = {
-        "A":  ("Two incomes. Two professionals. One budget that somehow still ran out before the 25th.",
-               "Math wasn't mathing."),
-        "B":  ("We were both too scared to quit our jobs. So we made a deal — whoever hit the goal first, "
-               "the other would follow. Spoiler: she went first. Of course.",
-               "Siyempre sya pa."),
-        "BW": ("She asked me why I was still awake at midnight researching. I said I was just curious. "
-               "Turns out, curiosity is where most things actually start.",
-               "Just curious."),
-        "C":  ("If you could design your ideal Monday morning — no alarm, no commute, no boss — "
-               "what would it actually look like?",
-               "We'll go first in the comments."),
-        "D":  ("Nobody told us that building something part-time while working full-time would be exhausting. "
-               "They also didn't tell us it would be worth it. Both things turned out to be true.",
-               "Both."),
-        "E":  ("One of the people we walked with told us she almost gave up three times. She didn't. "
-               "Now she's the one telling other people not to give up. We didn't do that. She did.",
-               "That's everything."),
+        "A":  (
+            "Math wasn't mathing.",
+            "Two incomes. Two professionals. One budget that somehow still ran out before the 25th. We've been there — counting days to payday, wondering where it all went. Sound familiar?",
+            "Math wasn't mathing.",
+        ),
+        "B":  (
+            "She went first. Of course.",
+            "We were both too scared to quit our jobs. So we made a deal — whoever hit the goal first, the other would follow. We thought it would take years. Spoiler: she went first. Of course she did. Have you ever made a deal like that with someone you love?",
+            "Siyempre sya pa.",
+        ),
+        "BW": (
+            "Just curious.",
+            "She asked us why we were still awake at midnight researching. We said we were just curious. Turns out, curiosity is where most things actually start. What were you curious about before life got busy?",
+            "Just curious.",
+        ),
+        "C":  (
+            "What would your ideal Monday look like?",
+            "If you could design your ideal Monday morning — no alarm, no commute, no boss — what would it actually look like? We'll go first in the comments.",
+            "We'll go first.",
+        ),
+        "D":  (
+            "Both things turned out to be true.",
+            "Nobody told us that building something part-time while working full-time would be exhausting. They also didn't tell us it would be worth it. Both things turned out to be true. What's something nobody warned you about — but you figured out anyway?",
+            "Both.",
+        ),
+        "E":  (
+            "We didn't do that. She did.",
+            "One of the people we walked with told us she almost gave up three times. She didn't. Now she's the one telling other people not to give up. We didn't do that. She did. Who in your life refused to quit when they easily could have?",
+            "That's everything.",
+        ),
     }
-    post, caption = fallbacks.get(fmt, fallbacks["A"])
-    return {"post": post, "caption": caption, "format": fmt, "hook": hook}
+    image_hook, post, caption = fallbacks.get(fmt, fallbacks["A"])
+    return {"image_hook": image_hook, "post": post, "caption": caption, "format": fmt, "hook": hook}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
