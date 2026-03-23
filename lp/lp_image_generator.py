@@ -95,11 +95,49 @@ def _load_font(paths: list, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _build_prompt(post_text: str) -> str:
+def _build_prompt(post_text: str, tone: str = "warm") -> str:
+    """
+    Build image prompt based on emotional tone of the post.
+    tone options: "warm" (lifestyle), "serious" (financial/news), "faith" (calm/spiritual)
+    """
     date_str = datetime.now().strftime("%Y-%m-%d")
     seed = int(hashlib.md5((date_str + post_text[:30]).encode()).hexdigest(), 16)
-    style = STYLE_POOL[seed % len(STYLE_POOL)]
-    return f"{style}, high resolution, photorealistic, vibrant, warm cinematic tones"
+
+    if tone == "serious":
+        # Financial stress / news — urban, tighter, more grounded
+        pool = [
+            "Filipino family checking grocery receipts at supermarket, worried expression, fluorescent lighting, realistic, no text",
+            "person looking at phone with financial news, urban Singapore street, overcast day, candid, no text",
+            "empty wallet on table next to grocery bags, hard light, stark, realistic, no text",
+            "busy wet market in Philippines, crowded, prices on signs, documentary style, no text",
+            "couple reviewing bills at home kitchen table, evening light, concerned, no text",
+            "long queue at ATM machine, urban setting, overcast, documentary photography, no text",
+            "hands counting peso bills on table, tight budget feel, realistic, no text",
+            "fuel pump at gas station, price display visible but blurred, urban Philippines, no text",
+            "empty plate next to calculator and receipts, hard honest lighting, no text",
+            "commuter on MRT looking tired, urban Singapore, candid street photography, no text",
+            "Filipino worker checking phone in break room, stressed expression, fluorescent light, no text",
+            "supermarket shelf with price tags, shopper looking concerned, realistic, no text",
+        ]
+    elif tone == "faith":
+        # Sunday faith posts — peaceful, light, spiritual
+        pool = [
+            "open Bible on wooden table, morning light, warm golden, peaceful, no text",
+            "hands clasped in prayer, soft window light, serene, no text",
+            "sunrise over calm ocean, golden horizon, peaceful and hopeful, no text",
+            "church interior with light streaming through windows, warm and peaceful, no text",
+            "lone tree on hill at sunrise, spiritual, calm, golden tones, no text",
+            "couple sitting quietly together watching sunset, peaceful, no text",
+            "candle flame in dark room, warm amber glow, contemplative, no text",
+            "open hands receiving light, spiritual symbolism, warm tones, no text",
+        ]
+    else:
+        # Default warm lifestyle pool
+        pool = STYLE_POOL
+
+    style = pool[seed % len(pool)]
+    base = "high resolution, photorealistic, square composition, no text, no words"
+    return f"{style}, {base}"
 
 
 def _wrap_text(draw, text: str, font, max_width: int) -> list:
@@ -117,11 +155,11 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list:
     return lines
 
 
-def _shorten_for_image(text: str, max_chars: int = 70) -> str:
+def _shorten_for_image(text: str, max_chars: int = 70, tone: str = "warm") -> str:
     """
-    Pick the catchiest 1-line hook from the post for the image overlay.
-    Priority: punchy complete sentence under max_chars.
-    Prefers questions, irony, and emotional statements over plain exposition.
+    Pick the catchiest 1-line hook for the image overlay.
+    tone="serious" prioritises urgency and impact words.
+    tone="warm"    prioritises relatable couple/human moments.
     """
     import re as _re
     sentences = _re.split(r'(?<=[.!?])\s+', text.strip())
@@ -132,25 +170,30 @@ def _shorten_for_image(text: str, max_chars: int = 70) -> str:
 
     def score(s):
         pts = 0
-        if 20 <= len(s) <= max_chars:    pts += 6   # good length — fits cleanly
-        if s.endswith("?"):              pts += 4   # question = engagement
-        if s.endswith("!"):              pts += 2   # exclamation = energy
-        if len(s) < 40:                  pts -= 2   # too short = incomplete thought
-        if any(w in s.lower() for w in [
-            "we", "us", "our",           # couple voice
-            "never", "always", "every",  # absolutes = shareable
-            "remember", "imagine",       # evocative openers
-            "still", "somehow",          # irony signals
-            "never told", "both",        # surprise/contrast
-        ]):                              pts += 2
-        if len(s) > max_chars:           pts -= 10  # too long — must truncate
+        sl  = s.lower()
+        if 20 <= len(s) <= max_chars:    pts += 6
+        if s.endswith("?"):              pts += 4
+        if s.endswith("!"):              pts += 2
+        if len(s) < 40:                  pts -= 2
+        if len(s) > max_chars:           pts -= 10
+
+        if tone == "serious":
+            # Financial/news — urgency and impact words score higher
+            for w in ["prices", "money", "wallet", "bills", "budget", "costs",
+                      "expensive", "afford", "tight", "loans", "peso",
+                      "already", "still", "harder", "feel it", "noticed"]:
+                if w in sl: pts += 3
+        else:
+            # Warm/couple — relatable "we" moments score higher
+            for w in ["we", "us", "our", "remember", "imagine", "still",
+                      "somehow", "both", "never", "always"]:
+                if w in sl: pts += 2
+
         return pts
 
     best = max(sentences, key=score)
-
     if len(best) > max_chars:
         best = best[:max_chars].rsplit(" ", 1)[0] + "..."
-
     return best
 
 
@@ -242,7 +285,7 @@ def generate_background(prompt: str) -> Image.Image | None:
     return _pollinations(SAFE_PROMPT)
 
 
-def add_text_overlay(image: Image.Image, post_text: str) -> Image.Image:
+def add_text_overlay(image: Image.Image, post_text: str, tone: str = "warm") -> Image.Image:
     """
     Photo post overlay — layout (bottom to top):
       ┌─────────────────────────┐
@@ -263,7 +306,7 @@ def add_text_overlay(image: Image.Image, post_text: str) -> Image.Image:
     CAP_GAP     = 16   # gap between logo bar and caption text
 
     # ── Short caption text — measure first ───────────────────────────────────
-    short_text = _shorten_for_image(post_text, max_chars=70)
+    short_text = _shorten_for_image(post_text, max_chars=70, tone=tone)
     font       = _load_font(FONT_EXTRABOLD, 54)
     max_w      = w - SIDE_PAD * 2
 
@@ -315,19 +358,19 @@ def add_text_overlay(image: Image.Image, post_text: str) -> Image.Image:
     return image
 
 
-def create_post_image(post_text: str, output_path: str, use_text_card: bool = False) -> str | None:
+def create_post_image(post_text: str, output_path: str, use_text_card: bool = False, tone: str = "warm") -> str | None:
     if use_text_card:
         return create_text_card(post_text, output_path)
 
     print(f'\nCreating LP image: "{post_text[:55]}..."')
-    prompt = _build_prompt(post_text)
+    prompt = _build_prompt(post_text, tone=tone)
     bg = generate_background(prompt)
 
     if bg is None:
         print("  Image generation failed — falling back to text card.")
         return create_text_card(post_text, output_path)
 
-    final = add_text_overlay(bg, post_text)
+    final = add_text_overlay(bg, post_text, tone=tone)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     final.save(output_path, quality=92)
     print(f"  Saved → {output_path}")

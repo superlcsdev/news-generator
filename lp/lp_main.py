@@ -211,11 +211,14 @@ def run_news_post(dry_run: bool):
     print("\n[3/5] Generating image...")
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     img_path = str(OUTPUT_DIR / f"lp_news_{ts}.jpg")
-    saved = create_post_image(post_text=result["post"], output_path=img_path)
+    saved = create_post_image(post_text=result["post"], output_path=img_path, tone="serious")
     if not saved:
         print("❌ Image generation failed."); sys.exit(1)
 
     fb_msg = f"{result['caption']}\n\n{result['post']}" if result["caption"] else result["post"]
+    # Let readers know the full article link is in the first comment
+    if result.get("article_url"):
+        fb_msg += "\n\n🔗 Full article in the first comment below."
 
     if dry_run:
         print("\n[DRY RUN ✓] Skipping Facebook post.")
