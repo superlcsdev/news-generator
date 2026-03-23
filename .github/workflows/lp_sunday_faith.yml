@@ -2,7 +2,6 @@ name: "LP — Sunday Faith Post"
 
 on:
   schedule:
-    # 11:00 PM Saturday UTC = 7:00 AM Sunday SGT
     - cron: '0 23 * * 6'
   workflow_dispatch:
     inputs:
@@ -27,6 +26,11 @@ jobs:
           OPENROUTER_API_KEY:      ${{ secrets.OPENROUTER_API_KEY }}
           FB_LP_PAGE_ID:           ${{ secrets.FB_LP_PAGE_ID }}
           FB_LP_PAGE_ACCESS_TOKEN: ${{ secrets.FB_LP_PAGE_ACCESS_TOKEN }}
+          DRY_RUN:                 ${{ github.event.inputs.dry_run || 'false' }}
         run: |
-          cd lp && python lp_main.py --type faith \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          cd lp
+          if [ "$DRY_RUN" = "true" ]; then
+            python lp_main.py --type faith --dry-run
+          else
+            python lp_main.py --type faith
+          fi

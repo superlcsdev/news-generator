@@ -24,6 +24,11 @@ jobs:
         env:
           FB_LP_PAGE_ID:           ${{ secrets.FB_LP_PAGE_ID }}
           FB_LP_PAGE_ACCESS_TOKEN: ${{ secrets.FB_LP_PAGE_ACCESS_TOKEN }}
+          DRY_RUN:                 ${{ github.event.inputs.dry_run || 'false' }}
         run: |
-          cd lp && python lp_main.py --type cta \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          cd lp
+          if [ "$DRY_RUN" = "true" ]; then
+            python lp_main.py --type cta --dry-run
+          else
+            python lp_main.py --type cta
+          fi
