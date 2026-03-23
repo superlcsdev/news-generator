@@ -229,7 +229,6 @@ def _gemini_image(prompt: str) -> Image.Image | None:
     """
     Primary image generator — Gemini 3.1 Flash Image Preview.
     Free tier: ~500 requests/day. Returns inline base64 PNG.
-    Uses google-genai SDK (different from the text API).
     """
     if not GEMINI_API_KEY:
         return None
@@ -241,11 +240,16 @@ def _gemini_image(prompt: str) -> Image.Image | None:
             model="gemini-3.1-flash-image-preview",
             contents=prompt,
             config=gtypes.GenerateContentConfig(
-                response_modalities=["Image", "Text"]
+                response_modalities=["IMAGE"],
+                image_config=gtypes.ImageConfig(
+                    aspect_ratio="1:1",
+                    image_size="1K",
+                    output_mime_type="image/png",
+                )
             ),
         )
         for part in response.candidates[0].content.parts:
-            if part.inline_data is not None:
+            if part.inline_data:
                 img = Image.open(BytesIO(part.inline_data.data)).convert("RGB")
                 return img.resize((IMAGE_WIDTH, IMAGE_HEIGHT), Image.LANCZOS)
         print("  ⚠️ Gemini image: no image part in response")
