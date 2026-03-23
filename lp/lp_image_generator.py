@@ -227,7 +227,7 @@ def _draw_logo_bar(draw: ImageDraw.ImageDraw, w: int, y_top: int, bar_h: int = 5
 
 def _gemini_image(prompt: str) -> Image.Image | None:
     """
-    Primary image generator — Gemini 3.1 Flash Image Preview.
+    Primary image generator — Gemini 2.5 Flash Image Preview.
     Free tier: ~500 requests/day. Returns inline base64 PNG.
     """
     if not GEMINI_API_KEY:
@@ -237,7 +237,7 @@ def _gemini_image(prompt: str) -> Image.Image | None:
         from google.genai import types as gtypes
         client = gai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-3.1-flash-image-preview",
+            model="gemini-2.5-flash-image",
             contents=prompt,
             config=gtypes.GenerateContentConfig(
                 response_modalities=["IMAGE"],
@@ -299,7 +299,7 @@ def _hf_call(prompt: str, api_url: str) -> Image.Image | None:
 def generate_background(prompt: str) -> Image.Image | None:
     """
     Image generation pipeline:
-    1. Gemini 3.1 Flash Image Preview (primary — free tier ~500/day)
+    1. Gemini 2.5 Flash Image Preview (primary — free tier ~500/day)
     2. HuggingFace SDXL-Lightning (fallback 1 — fast 4-step distilled)
     3. HuggingFace SD 1.5 (fallback 2 — reliable, lightweight)
     4. None → text card fallback handled by caller
