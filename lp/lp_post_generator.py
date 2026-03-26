@@ -157,9 +157,15 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
         f"- Never use: leverage, empower, unlock, holistic, synergy, transformative\n"
         f"- Apply the Golden Test before finalising\n\n"
         f"Output format (use exactly):\n"
-        f"IMAGE_HOOK: [1 punchy sentence max 60 chars — the scroll-stopper that goes on the image card]\n"
-        f"POST: [full story for the Facebook caption — 4-6 sentences, richer detail, ends with a question]\n"
-        f"CAPTION: [2–5 words — Taglish reaction above the post. e.g. 'Siyempre sya pa.' / 'Kaso wala tayong choice.' / 'Totoo 'to.']\n"
+        f"IMAGE_HOOK: [1 punchy sentence max 60 chars — the scroll-stopper shown on the image card]\n"
+        f"POST: [A short personal story (3-5 sentences) drawn from the story seed above, "
+        f"followed by 1-2 sentences of a lesson the audience can take away. "
+        f"The story must be tied to HEALTH, FINANCE, or ENTREPRENEURSHIP — whichever fits most naturally. "
+        f"Write it as Lawrence & Precious speaking together ('we'). "
+        f"The lesson should feel discovered, not preached — end with something the audience can reflect on or answer. "
+        f"Total: 5-7 sentences. No bullet points. No headers. Just a flowing story.]\n"
+        f"CAPTION: [2–5 words — Taglish emotional reaction that sits above the story. "
+        f"e.g. 'Siyempre sya pa.' / 'Kaso wala tayong choice.' / 'Totoo 'to.' / 'Hindi namin inasahan.']\n"
         f"FORMAT: [{fmt}]\n"
         f"HOOK: [{hook}]"
     )
@@ -200,36 +206,68 @@ def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
 
 
 def _text_fallback(fmt: str, hook: str) -> dict:
-    """Pre-written fallback posts per format — no AI needed."""
+    """Pre-written fallback posts per format — real stories with lessons."""
     fallbacks = {
-        "A":  (
-            "Math wasn't mathing.",
-            "Two incomes. Two professionals. One budget that somehow still ran out before the 25th. We've been there — counting days to payday, wondering where it all went. Sound familiar?",
+        "A": (
+            # image_hook
+            "Two salaries. Still ran out before the 25th.",
+            # post — finance theme
+            "We both had good jobs. Two incomes, no dependents, living in Singapore. "
+            "And somehow, every month, we were counting days to payday. "
+            "It wasn't a spending problem. It was a system problem — we had no plan for the money, so the money always had a plan for us. "
+            "The moment we started treating our income like a business — tracking it, allocating it, protecting it — everything changed. "
+            "What does your money do between payday and the next bill?",
+            # caption
             "Math wasn't mathing.",
         ),
-        "B":  (
-            "She went first. Of course.",
-            "We were both too scared to quit our jobs. So we made a deal — whoever hit the goal first, the other would follow. We thought it would take years. Spoiler: she went first. Of course she did. Have you ever made a deal like that with someone you love?",
+        "B": (
+            "She went first. Of course she did.",
+            "We made a deal early on — whoever hits the goal first, the other follows. "
+            "We thought it was a fair agreement. We did not think it through. "
+            "She resigned first, paid back her bond, walked away from a career most people would keep forever. "
+            "Watching someone you love bet on themselves teaches you more about courage than any book ever could. "
+            "The lesson we learned: the most important business decision we ever made wasn't a strategy. It was choosing who to build with. "
+            "Who in your life makes you braver just by watching them?",
             "Siyempre sya pa.",
         ),
         "BW": (
-            "Just curious.",
-            "She asked us why we were still awake at midnight researching. We said we were just curious. Turns out, curiosity is where most things actually start. What were you curious about before life got busy?",
-            "Just curious.",
+            "We started tired. We're still here.",
+            "There was a season when we were building part-time while working full-time. "
+            "We were exhausted in a way that sleep didn't fix — the kind that comes from pouring into two directions at once. "
+            "But something happened in that season that we didn't expect: we got healthier. "
+            "Not physically at first — mentally. We stopped waiting for someone else to make decisions for us. "
+            "Stress from building something you chose is different from stress from a job you're stuck in. "
+            "One drains you. The other — slowly, quietly — builds you. "
+            "What kind of tired are you right now?",
+            "Capain ng pagod, ibang klase.",
         ),
-        "C":  (
-            "What would your ideal Monday look like?",
-            "If you could design your ideal Monday morning — no alarm, no commute, no boss — what would it actually look like? We'll go first in the comments.",
-            "We'll go first.",
+        "C": (
+            "What would your Monday morning look like?",
+            "We used to dread Sunday nights. That specific feeling of a Monday already pressing on your chest before it arrives. "
+            "We didn't fix it by finding better jobs. We fixed it by deciding that a Monday we hate is information, not a life sentence. "
+            "That discomfort told us something about what we actually wanted — and gave us a direction to move toward. "
+            "If you could design your ideal Monday morning — no alarm, no commute, no boss checking in — what would it look like? "
+            "We'll go first in the comments.",
+            "Anong feeling ng Sunday night mo?",
         ),
-        "D":  (
-            "Both things turned out to be true.",
-            "Nobody told us that building something part-time while working full-time would be exhausting. They also didn't tell us it would be worth it. Both things turned out to be true. What's something nobody warned you about — but you figured out anyway?",
-            "Both.",
+        "D": (
+            "Nobody told us it would take this long.",
+            "Nobody told us that the first two years would feel like throwing effort into a void. "
+            "Nobody told us that the people we'd help most were people we hadn't even met yet. "
+            "And nobody told us that the version of ourselves on the other side would barely recognise the ones who started. "
+            "Entrepreneurship isn't a fast track to anything — it's a slow rebuild of who you are. "
+            "The income eventually followed. But the person who could handle that income had to be built first. "
+            "What's something you're building right now that nobody else can see yet?",
+            "Hindi kami nagmamadali. Ngayon naiintindihan namin kung bakit.",
         ),
-        "E":  (
-            "We didn't do that. She did.",
-            "One of the people we walked with told us she almost gave up three times. She didn't. Now she's the one telling other people not to give up. We didn't do that. She did. Who in your life refused to quit when they easily could have?",
+        "E": (
+            "She almost quit three times. She didn't.",
+            "One of the people we walked with told us she almost walked away three times in her first year. "
+            "Work was busy. Family needed her. Her results were slow. Every reason was valid. "
+            "She stayed anyway — not because it was easy, but because she decided that her reasons to continue outweighed her reasons to stop. "
+            "Last month she reached a milestone she had been working toward for two years. "
+            "She sent us a message at midnight. We cried a little. We didn't do that. She did. "
+            "If you're in the middle of something hard right now — what would staying look like?",
             "That's everything.",
         ),
     }
