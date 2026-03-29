@@ -269,24 +269,27 @@ def run_cta_post(dry_run: bool):
 def run_faith_post(dry_run: bool):
     print("\n[1/3] Generating Sunday faith post...")
     result = generate_faith_post()
-    print(f"\n  THEME:   {result['theme']}")
-    print(f"  VERSE:   {result.get('verse', 'N/A')}")
-    print(f"  CAPTION: {result['caption']}")
-    print(f"  POST preview: {result['post'][:100]}...")
+    print(f"\n  CATEGORY: {result.get('category', 'N/A')}")
+    print(f"  VERSE:    {result.get('verse', 'N/A')}")
+    print(f"  CAPTION:  {result['caption']}")
+    print(f"  VERSE TEXT (image):\n  {result['verse_text'][:120]}...")
+    print(f"  POST (caption):\n  {result['post'][:120]}...")
 
-    # Faith posts use pure black text card — clean, reverent, readable
+    # Image card shows ONLY the Bible verse — clean, no reflection text
     print("\n[2/3] Creating text card...")
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     img_path = str(OUTPUT_DIR / f"lp_faith_{ts}.jpg")
-    saved    = create_text_card(post_text=result["post"], output_path=img_path)
+    saved    = create_text_card(post_text=result["verse_text"], output_path=img_path)
     if not saved:
         print("  Warning: Text card failed. Posting as text only.")
 
+    # Facebook caption = Taglish reaction + reflection + lesson
     fb_msg = f"{result['caption']}\n\n{result['post']}"
 
     if dry_run:
         print("\n[DRY RUN] Skipping Facebook post.")
-        print(f"\nFull message:\n{fb_msg}")
+        print(f"\nImage text (verse only):\n{result['verse_text']}")
+        print(f"\nFull FB message:\n{fb_msg}")
         return
 
     print("\n[3/3] Posting to Facebook...")
