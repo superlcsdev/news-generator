@@ -281,34 +281,40 @@ def _text_fallback(fmt: str, hook: str) -> dict:
 
 # Rotate topics by day so every poll feels fresh
 POLL_TOPICS = [
+    # All topics are day-neutral — safe to post on any day of the week
     "what your typical weeknight looks like after work",
     "what you do right after receiving your salary",
     "who makes the big financial decisions in your household",
-    "your ideal free Saturday with zero obligations",
+    "your ideal weekend with zero obligations",
     "how you really feel about your current work situation",
     "the thing couples argue about most without saying it out loud",
     "what you wish you had more of in your daily life",
     "which expense surprises you every single month",
-    "how you feel about Mondays — honestly",
     "the colleague type that exists in every Filipino workplace",
+    "what you do when stress hits at the end of the day",
+    "how you feel when payday is still a week away",
+    "what you would do with one extra free hour every day",
+    "the one bill that always catches you off guard",
+    "what motivates you to keep going when work gets tough",
+    "how you unwind after a long day",
 ]
 
 POLL_FALLBACK = {
-    "question": "What does your Friday evening actually look like?",
+    "question": "What does your evening usually look like after work?",
     "options": [
         "🅐  Already asleep by 9 PM. No shame.",
         "🅑  Doomscrolling until midnight somehow.",
         "🅒  Quietly planning how to escape the 9-to-5.",
-        "🅓  What's rest? I have weekend errands.",
+        "🅓  What's rest? I have errands to finish.",
     ],
     "caption": "Be honest.",
     "fb_message": (
         "Be honest.\n\n"
-        "What does your Friday evening actually look like?\n\n"
+        "What does your evening usually look like after work?\n\n"
         "🅐  Already asleep by 9 PM. No shame.\n"
         "🅑  Doomscrolling until midnight somehow.\n"
         "🅒  Quietly planning how to escape the 9-to-5.\n"
-        "🅓  What's rest? I have weekend errands.\n\n"
+        "🅓  What's rest? I have errands to finish.\n\n"
         "Comment your answer below 👇"
     ),
 }
@@ -319,8 +325,11 @@ def generate_poll_post() -> dict:
     Generate a poll-style post with 3-4 emoji options.
     Returns: {question, options, caption, fb_message}
     """
-    day   = datetime.date.today().timetuple().tm_yday
-    topic = POLL_TOPICS[day % len(POLL_TOPICS)]
+    # Rotate by week number so topics change weekly, not daily
+    # This avoids the same topic repeating within the same week
+    # and ensures day-specific topics never land on wrong days
+    week = datetime.date.today().isocalendar()[1]
+    topic = POLL_TOPICS[week % len(POLL_TOPICS)]
 
     user_msg = (
         f"Generate a poll-style Facebook post for @lawrenceprecioussia.\n"
