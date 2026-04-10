@@ -1,9 +1,10 @@
 """
 lp/lp_news_fetcher.py
 Fetches and scores news for @lawrenceprecioussia audience.
-Matches the pattern from news_fetcher.py — same RSS + scoring approach.
-Uses a SEPARATE post history file (lp_post_history.json) so it never
-conflicts with the health news post_history.json.
+
+Purpose: Find articles that inspire Filipinos to think about building
+another income source — motivated by possibility, not fear.
+Tone target: "This is why it's worth it" not "This is why you should be scared."
 """
 
 import os
@@ -16,71 +17,85 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── RSS Sources — focused on working professional and financial content ────────
+# ── RSS Sources — broadened to include inspiration + business building ─────────
 RSS_SOURCES = [
-    # Philippine business and financial news — highest relevance
-    {"url": "https://businessmirror.com.ph/feed/",                 "source": "BusinessMirror",   "weight": 1.3},
-    {"url": "https://www.bworldonline.com/feed/",                  "source": "BusinessWorld PH", "weight": 1.3},
+    # Philippine business — high signal for OFW/professional audience
+    {"url": "https://businessmirror.com.ph/feed/",              "source": "BusinessMirror",   "weight": 1.3},
+    {"url": "https://www.bworldonline.com/feed/",               "source": "BusinessWorld PH", "weight": 1.3},
+    # Entrepreneurship and career — globally relevant
+    {"url": "https://feeds.feedburner.com/entrepreneur/latest", "source": "Entrepreneur",     "weight": 1.3},
+    {"url": "https://hbr.org/rss/topic/entrepreneurship",       "source": "HBR Entrepreneurship", "weight": 1.2},
+    {"url": "https://hbr.org/rss/topic/work-life-balance",      "source": "HBR Work-Life",    "weight": 1.2},
+    {"url": "https://hbr.org/rss/topic/finance",                "source": "HBR Finance",      "weight": 1.1},
     # Singapore working life
-    {"url": "https://www.channelnewsasia.com/rss/8395986",         "source": "CNA Singapore",    "weight": 1.2},
-    # Global work/career/leadership
-    {"url": "https://hbr.org/rss/topic/work-life-balance",        "source": "HBR Work-Life",    "weight": 1.2},
-    {"url": "https://feeds.feedburner.com/entrepreneur/latest",    "source": "Entrepreneur",     "weight": 1.0},
-    # Philippine general news — lower weight, more noise
-    {"url": "https://newsinfo.inquirer.net/feed",                  "source": "Inquirer",         "weight": 0.8},
-    # Rappler removed — too much entertainment/politics noise for this audience
+    {"url": "https://www.channelnewsasia.com/rss/8395986",      "source": "CNA Singapore",    "weight": 1.1},
+    # Inc. Magazine — entrepreneurship stories and inspiration
+    {"url": "https://www.inc.com/rss",                          "source": "Inc Magazine",     "weight": 1.2},
+    # Forbes entrepreneurship
+    {"url": "https://www.forbes.com/feeds/news/rss/entrepreneurship.xml", "source": "Forbes Entrepreneurs", "weight": 1.1},
+    # Philippine general — lower weight, higher noise
+    {"url": "https://newsinfo.inquirer.net/feed",               "source": "Inquirer",         "weight": 0.8},
 ]
 
-# ── Viral scoring keywords — tuned for LP audience pain points ───────────────
+# ── HIGH VALUE keywords — motivation and opportunity framing ──────────────────
 HIGH_VALUE = {
-    # Financial reality — highest value
-    "salary": 4, "income": 4, "wages": 3, "minimum wage": 4,
-    "savings": 4, "debt": 3, "inflation": 4, "cost of living": 4,
-    "peso": 3, "exchange rate": 3,
-    # OFW and Singapore working life
-    "ofw": 4, "overseas filipino": 4, "remittance": 3,
-    "singapore worker": 4, "foreign worker": 3, "work pass": 3,
-    # Work-life pain points
+    # Building income — the core theme
+    "side hustle": 5, "extra income": 5, "multiple income": 5,
+    "passive income": 5, "second income": 5, "income stream": 5,
+    "financial freedom": 5, "financial independence": 4,
+    "entrepreneur": 4, "entrepreneurship": 4,
+    "small business": 4, "startup": 3, "self employed": 4,
+    "freelance": 4, "freelancer": 4,
+    # Career and work pain points — signals "maybe I should build something"
     "burnout": 4, "work life balance": 4, "resignation": 3,
-    "quiet quitting": 3, "remote work": 3, "work from home": 3,
-    "overworked": 3, "underpaid": 4, "job stress": 3,
-    "layoff": 4, "retrenchment": 4, "redundancy": 3,
-    # Building something
-    "side hustle": 4, "extra income": 4, "entrepreneur": 3,
-    "small business": 3, "freelance": 3,
-    "self employed": 3, "startup": 2,
-    # Family and time
-    "work family balance": 4, "parenting": 2, "family income": 3,
-    "financial stress": 4, "money stress": 4,
-    # Geography — lower value, just context
+    "quiet quitting": 4, "overworked": 4, "underpaid": 4,
+    "layoff": 4, "retrenchment": 4, "redundancy": 4,
+    "job security": 4, "career change": 4,
+    # Financial reality — cost of living awareness
+    "salary": 3, "income": 3, "wages": 3, "savings": 4,
+    "cost of living": 4, "inflation": 3, "peso": 2,
+    "remittance": 3, "family income": 4,
+    # OFW and Singapore — audience context
+    "ofw": 4, "overseas filipino": 4,
+    "singapore worker": 3, "work pass": 3,
     "philippines": 1, "singapore": 1, "filipino": 2, "pinoy": 2,
+    # Inspiration signals
+    "success story": 4, "built": 3, "founder": 3,
+    "opportunity": 3, "growth": 2, "invest": 3, "wealth": 3,
 }
 
-# Hard reject — article immediately discarded if any of these appear in title/summary
+# ── NEGATIVE keywords — reject these immediately ──────────────────────────────
 NEGATIVE_KEYWORDS = [
-    # Violence and disaster
+    # Violence, crime, disaster
     "murder", "crime", "rape", "scandal", "corruption",
     "war", "bomb", "terror", "shooting", "earthquake",
-    "typhoon", "flood", "death toll", "killed",
+    "typhoon", "flood", "death toll", "killed", "casualties",
     # Sports
     "wnba", "nba", "pba", "nfl", "fifa", "ufc",
-    "basketball game", "football game", "tennis tournament",
-    "golf tournament", "boxing match", "athlete",
+    "basketball game", "football match", "tennis tournament",
+    "golf tournament", "boxing match",
     # Entertainment / celebrity
-    "celebrity", "actor", "actress", "showbiz", "box office",
-    "concert tour", "album release", "grammy", "oscar",
-    "richard mercado", "festival parade",
-    # Geopolitics — too divisive, off-brand
+    "celebrity", "showbiz", "box office", "concert tour",
+    "album release", "grammy", "oscar", "festival parade",
+    # Pure fear/negativity — no motivational angle possible
+    "recession fears", "market crash", "bank collapse",
+    "mass layoff", "factory closure",
+    # Geopolitics
     "trump", "iran", "missile", "nuclear", "military strike",
-    "senate hearing", "impeach", "opposition leader",
-    # Off-topic lifestyle
-    "strawberry festival", "food festival", "tourism",
-    "recipe", "restaurant review",
+    "senate hearing", "impeach",
+    # Off-topic
+    "food festival", "tourism", "recipe", "restaurant review",
 ]
 
-# Minimum score — must genuinely match audience keywords, not just geography
-# Score of 5+ means at least one strong keyword (salary=4 + philippines=1)
-MIN_SCORE = 5
+# ── POSITIVE BOOST — articles with these get extra score ─────────────────────
+POSITIVE_BOOST = [
+    "how to", "tips", "guide", "build", "grow", "start",
+    "success", "achieve", "opportunity", "future", "freedom",
+    "inspire", "motivate", "story", "journey", "playbook",
+]
+
+# Minimum score — must genuinely match audience themes
+MIN_SCORE = 4
 
 # Separate history file — never conflicts with health news post_history.json
 HISTORY_FILE = "lp_post_history.json"
@@ -130,13 +145,19 @@ def _already_posted(title: str) -> bool:
 def _score(article: dict, weight: float) -> int:
     text = (article.get("title", "") + " " + article.get("summary", "")).lower()
 
+    # Hard reject
     for neg in NEGATIVE_KEYWORDS:
         if neg in text:
             return -1
 
+    # Base score from high-value keywords
     score = sum(pts for kw, pts in HIGH_VALUE.items() if kw in text)
 
-    # Recency bonus — same as your ai_selector.py logic
+    # Positive boost — articles about building/growing/inspiring score higher
+    boost = sum(1 for word in POSITIVE_BOOST if word in text)
+    score += min(boost, 4)  # cap boost at 4 points
+
+    # Recency bonus
     pub = article.get("published_parsed")
     if pub:
         try:
