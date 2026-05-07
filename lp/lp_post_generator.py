@@ -332,10 +332,13 @@ def generate_poll_post() -> dict:
     topic = POLL_TOPICS[week % len(POLL_TOPICS)]
 
     user_msg = (
-        f"Generate a poll-style Facebook post for @lawrenceprecioussia.\n"
-        f"Topic: {topic}\n\n"
+        f"Generate a poll-style Facebook post for @lawrenceprecioussia.\n\n"
+        f"REQUIRED TOPIC: {topic}\n"
+        f"The QUESTION must be directly and specifically about this topic. "
+        f"Do not drift to a different topic. Do not reference any specific day of the week "
+        f"(no Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday, weekend, weekday).\n\n"
         f"Rules:\n"
-        f"- Question: fun, relatable, no wrong answers, complete sentence\n"
+        f"- Question: fun, relatable, no wrong answers, complete sentence, strictly about the topic above\n"
         f"- 4 short options (A, B, C, D) — funny or painfully relatable\n"
         f"- Each option: maximum 8 words, no punctuation at the end\n"
         f"- English throughout. Caption can be 1 Taglish phrase.\n"
@@ -349,7 +352,6 @@ def generate_poll_post() -> dict:
         f"CAPTION: [2-5 words]"
     )
 
-    # Increased max_tokens to 400 — poll needs more room than a single post
     raw = call_gemini(user_msg, temperature=0.92, max_tokens=400)
 
     if not raw:
@@ -358,7 +360,6 @@ def generate_poll_post() -> dict:
 
     print(f"\n--- Gemini raw (poll) ---\n{raw}\n---")
 
-    # Robust line-by-line parser — handles any whitespace/formatting variation
     question = ""
     opt_a = opt_b = opt_c = opt_d = ""
     caption = ""
@@ -377,6 +378,35 @@ def generate_poll_post() -> dict:
             opt_d = re.sub(r"^D[\s:.]+", "", line, flags=re.IGNORECASE).strip()
         elif line.upper().startswith("CAPTION:"):
             caption = line[8:].strip().strip('"')
+
+    # Reject if question contains a specific day name
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday",
+                 "saturday", "sunday", "weekday", "weekend"]
+    if any(d in question.lower() for d in day_names):
+        print(f"  ⚠️ Poll question contains day name — retrying with stronger instruction.")
+        user_msg2 = user_msg + (
+            "\n\nSTRICT: The question must NOT mention any day of the week. "
+            "Previous attempt failed this check. Avoid Monday, Friday, weekend entirely."
+        )
+        raw = call_gemini(user_msg2, temperature=0.85, max_tokens=400)
+        if raw:
+            for line in raw.strip().splitlines():
+                line = line.strip()
+                if line.upper().startswith("QUESTION:"):
+                    question = line[9:].strip().strip('"')
+                elif re.match(r"^A[\s:.]", line, re.IGNORECASE):
+                    opt_a = re.sub(r"^A[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+                elif re.match(r"^B[\s:.]", line, re.IGNORECASE):
+                    opt_b = re.sub(r"^B[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+                elif re.match(r"^C[\s:.]", line, re.IGNORECASE):
+                    opt_c = re.sub(r"^C[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+                elif re.match(r"^D[\s:.]", line, re.IGNORECASE):
+                    opt_d = re.sub(r"^D[\s:.]+", "", line, flags=re.IGNORECASE).strip()
+                elif line.upper().startswith("CAPTION:"):
+                    caption = line[8:].strip().strip('"')
+        if any(d in question.lower() for d in day_names):
+            print("  ⚠️ Still contains day name after retry — using fallback.")
+            return POLL_FALLBACK
 
     # Validate — if question or any option is missing, use fallback
     missing = []
