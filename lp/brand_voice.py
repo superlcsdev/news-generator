@@ -79,7 +79,7 @@ FORMATS = {
 }
 
 # Weighted — humor and pain drive shares fastest for reach-building phase
-FORMAT_WEIGHTS = {"A": 25, "B": 20, "BW": 20, "C": 20, "D": 10, "E": 5}
+FORMAT_WEIGHTS = {"A": 25, "B": 20, "BW": 20, "C": 20, "D": 10}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WEEKLY CONTENT CALENDAR
@@ -93,7 +93,7 @@ WEEKLY_CALENDAR = {
     3: {"format": "D",  "hook": "WISDOM"},  # Thursday — Quiet Wisdom
     4: {"format": "B",  "hook": "HUMOR"},   # Friday   — Couple Humor (end week with laughs)
     5: {"format": "A",  "hook": "PAIN"},    # Saturday — Pain Point (weekend scroll peak)
-    6: {"format": "E",  "hook": "PRIDE"},   # Sunday   — Other People's Wins (or CTA bi-weekly)
+    6: {"format": "D",  "hook": "WISDOM"},  # Sunday   —  Quiet Wisdom
 }
 
 HOOKS = ["HUMOR", "PAIN", "DREAM", "WISDOM", "PRIDE"]
