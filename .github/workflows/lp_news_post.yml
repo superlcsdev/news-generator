@@ -2,9 +2,7 @@ name: "LP — News Post"
 
 on:
   schedule:
-    - cron: '0 3 * * 1'
-    - cron: '0 3 * * 4'
-    - cron: '0 3 * * 6'
+    - cron: '0 3 * * 6'   # Saturday 11AM SGT
   workflow_dispatch:
     inputs:
       dry_run:
