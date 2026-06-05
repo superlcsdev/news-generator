@@ -1,320 +1,356 @@
 """
 lp/lp_post_generator.py
-Generates all post types for @lawrenceprecioussia.
-Mirrors hook_writer.py pattern — one module, clean functions per type.
+Post generators for @lawrenceprecioussia.
 
-Post types:
-  generate_text_post()  — Formats A / B / BW / C / D / E
-  generate_poll_post()  — Engagement poll with emoji options
-  generate_news_hook()  — Reframes a news article through couple brand lens
-  get_cta_post()        — Rotating pre-written CTA (no Gemini needed)
+New strategy: attract strangers, not tell stories.
+5 formats: TRUTH, MATH, REFRAME, IDENTITY, QUESTION
+Each designed to make Filipino professionals feel seen and want to share.
 """
 
 import re
-import random
 import datetime
-from brand_voice import FORMATS, FORMAT_WEIGHTS, HOOKS, HOOK_WEIGHTS
+import random
 from lp_gemini import call_gemini
-from story_bank import get_seed_context
-
+from brand_voice import SYSTEM_PROMPT, FORMATS, FORBIDDEN_TERMS
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SAFETY FILTER — hard block on forbidden words/phrases
-# Runs on every generated post BEFORE it is returned or published
+# CONTENT SEEDS — topic pools per format, rotated weekly
 # ─────────────────────────────────────────────────────────────────────────────
 
-FORBIDDEN_TERMS = [
-    # Brand / business identity
-    "usana", "mlm", "multi-level", "multilevel", "network marketing",
-    "direct selling", "direct sales", "direct sell",
-    # Recruitment language
-    "business opportunity", "income opportunity", "join our team",
-    "join us", "be your own boss", "work from home opportunity",
-    "downline", "upline", "brand partner", "distributor",
-    "associate program", "sign up with us",
-    # Product / health claims
-    "supplement", "vitamin", "nutritional", "health product",
-    "weight loss", "immune system boost",
-    # Rank / income reveals
-    "gold director", "diamond director", "uem",
-    "commission", "rank advancement", "rank qualification",
-    # Pitch phrases
-    "message us to", "dm us", "send us a message to learn",
-    "comment to join", "link in bio for",
+TRUTH_TOPICS = [
+    "having a stable job is not the same as having financial security",
+    "most Filipino professionals are excellent at their job but underpaid for their potential",
+    "working hard for someone else has a ceiling that working hard for yourself does not",
+    "job security is something your employer controls, not you",
+    "sending money home every month is love — but it also means you can never stop working",
+    "most people plan their career but never plan their income",
+    "being promoted at work and building wealth are two completely different things",
+    "the safest-looking path is often the one with the least exit",
+    "a good salary without a plan is just a comfortable trap",
+    "loyalty to a company that can retrench you overnight is not a strategy",
+    "most Filipinos were taught to find a good job, not to build something",
+    "your income stops the moment you do — that's not freedom, that's dependency",
+    "being busy and being productive with your future are not the same thing",
+    "most people know they need another income source — almost nobody acts on it",
 ]
 
+MATH_TOPICS = [
+    "salary vs monthly expenses vs what's left for the future",
+    "what happens to remittances over 10 years if nothing changes",
+    "how much a typical Filipino professional in Singapore keeps after expenses",
+    "the real cost of staying in a job you've outgrown",
+    "how long your savings would last if your job stopped tomorrow",
+    "what a 5% salary increase actually means after tax and expenses",
+    "the gap between what you earn and what you actually keep",
+    "how many years of work it takes to buy a house in Singapore vs Philippines",
+    "what your monthly take-home becomes after rent, remittance, and daily expenses",
+    "the math behind why two incomes change everything",
+]
 
-def _safety_check(post: str, caption: str) -> tuple[bool, str]:
-    """
-    Returns (is_safe, reason).
-    Checks post + caption for forbidden terms and brand voice violations.
-    """
-    combined = (post + " " + caption).lower()
+REFRAME_TOPICS = [
+    "we were taught that a degree guarantees a good future — what it actually guarantees",
+    "we were taught that saving money is enough — what saving without investing actually does",
+    "we were taught that working harder gets you further — the ceiling most people hit",
+    "we were taught to be grateful for a stable job — what stability actually costs",
+    "we were taught that sacrifice now means comfort later — who decides when 'later' arrives",
+    "we were told that your employer values your loyalty — what they value more",
+    "we were raised to believe that one income is enough — when that stopped being true",
+    "we were taught that asking for more is greedy — why staying silent costs more",
+    "we believed that being employed meant being secure — the difference between a job and security",
+    "we grew up thinking success means a good title — what success actually looks like at 40",
+    "we were taught that the Philippines is the only place for family — what OFWs actually carry",
+    "we were told that hard work always pays off — who it pays off for",
+]
 
-    # Forbidden business/product terms
-    for term in FORBIDDEN_TERMS:
-        if term in combined:
-            return False, f"Forbidden term detected: '{term}'"
+IDENTITY_TOPICS = [
+    "the Filipino professional who works hard, sends money home, and still feels like it's never enough",
+    "the one in the family who made it — and now carries everyone",
+    "the professional who is excellent at their job but invisible in terms of building wealth",
+    "the person who has a good life on paper but quietly wonders if this is all there is",
+    "the Filipino in Singapore who left home to build a better future but isn't sure the future is building itself",
+    "the professional who knows they need to do something different but doesn't know what or when",
+    "the one who is always the reliable one — at work, at home, in the family — and is quietly exhausted",
+    "the person who has been planning to start something for years but life keeps getting in the way",
+    "the professional who earns well but somehow never gets ahead of expenses",
+    "the Filipino parent who wants to give their children options they never had",
+    "the one who watches others build something and thinks — why not me",
+    "the professional who is great at executing someone else's vision but has never been asked about their own",
+]
 
-    # Check for solo "I" or "My" pronoun as narrative subject — must always be "we/our"
-    # Strip quoted speech first (e.g. "I said..." is okay inside dialogue)
-    import re as _re
-    post_no_quotes = _re.sub(r'"[^"]*"', '', post)
-    post_no_quotes = _re.sub(r"'[^']*'", '', post_no_quotes)
-    # Flag if "I" appears more than once OR "My" appears as a possessive narrator
-    i_matches  = _re.findall(r'\bI\b', post_no_quotes)
-    my_matches = _re.findall(r'\bMy\b', post_no_quotes)
-    if len(i_matches) > 1:
-        return False, f"Post uses 'I' {len(i_matches)} times — must speak as a couple using 'we'"
-    if len(my_matches) > 0:
-        return False, f"Post uses 'My' — must use 'our' to speak as a couple"
+QUESTION_TOPICS = [
+    "how long you could survive on savings if your income stopped tomorrow",
+    "whether your current income will still be enough in 5 years given how prices keep rising",
+    "what you would do differently if you had started building something on the side 3 years ago",
+    "whether you are building towards something or just maintaining where you are",
+    "what your financial life looks like when you are 55 if nothing changes",
+    "how many income sources you currently have vs how many you would need to feel secure",
+    "what you would do with your time if you didn't have to work for money",
+    "whether the career path you are on is one you chose or one you fell into",
+    "what one financial decision you made that you wish you had made differently",
+    "what would have to change for you to feel genuinely financially free",
+    "whether your parents' definition of success still fits your life",
+    "what you are waiting for before you start building something of your own",
+]
 
-    return True, ""
+# ─────────────────────────────────────────────────────────────────────────────
+# FALLBACK BANK — pre-written, no AI needed
+# ─────────────────────────────────────────────────────────────────────────────
 
+TRUTH_FALLBACKS = [
+    {
+        "image_hook": "A stable job is not financial security.",
+        "post": "A stable job is not the same as financial security.\n\nThey look the same from the outside.\nBut one depends on your employer's decisions.\nThe other depends on yours.\n\nMost of us were never taught the difference.\n\nWhich one are you actually building right now?",
+        "caption": "Worth sitting with.",
+    },
+    {
+        "image_hook": "Your income stops the moment you do.",
+        "post": "Your income stops the moment you do.\n\nThat's not freedom.\nThat's a well-paying dependency.\n\nMost people know this.\nAlmost nobody talks about it.\n\nWhat would it take for that to change for you?",
+        "caption": "Real talk.",
+    },
+    {
+        "image_hook": "You were taught to find a job. Not to build something.",
+        "post": "Most of us were raised with one financial instruction:\nFind a good job. Keep it. Be grateful.\n\nNobody taught us to build something of our own.\nNobody taught us that a salary has a ceiling.\nNobody taught us what happens when the job ends.\n\nThat's not a blame game.\nIt's just information.\n\nWhat would you teach your children that nobody taught you?",
+        "caption": "Think about this.",
+    },
+]
+
+MATH_FALLBACKS = [
+    {
+        "image_hook": "SGD 4,000 salary. Let's do the math.",
+        "post": "You earn SGD 4,000.\n\nRent: SGD 1,200.\nRemittance: SGD 1,000.\nFood and transport: SGD 600.\nPhone, insurance, subscriptions: SGD 200.\n\nWhat's left: SGD 1,000.\n\nTo save. To invest. To build. To handle emergencies.\n\nFor an entire month.\n\nDoes that number feel like enough to you?",
+        "caption": "The honest math.",
+    },
+    {
+        "image_hook": "How long would your savings last?",
+        "post": "If your job stopped tomorrow —\nnot if you quit, but if it ended —\nhow long could you last on savings?\n\n1 month?\n3 months?\n6 months?\n\nMost people answer this question and go very quiet.\n\nThere's no wrong answer.\nBut there is an important one.\n\nWhat's yours?",
+        "caption": "Be honest with yourself.",
+    },
+]
+
+REFRAME_FALLBACKS = [
+    {
+        "image_hook": "Working harder has a ceiling. Most people find it too late.",
+        "post": "We were taught that working harder gets you further.\n\nAnd it does — up to a point.\n\nBut working harder for someone else has a ceiling.\nYour employer decides where that ceiling is.\nYour performance review decides when you reach it.\nA business decision you had no part in can remove it entirely.\n\nWorking harder on something you own has a different equation.\n\nWhat's the ceiling on what you're building right now?",
+        "caption": "Something to consider.",
+    },
+    {
+        "image_hook": "Saving money is not enough anymore.",
+        "post": "We were taught to save.\n\nSave for emergencies.\nSave for the future.\nSave, save, save.\n\nNobody told us that saving without growing means inflation quietly eats it.\nNobody told us that a savings account is not a plan.\nNobody told us that time is the one thing savings can't buy back.\n\nSaving is the floor.\nNot the ceiling.\n\nWhat are you doing above the floor?",
+        "caption": "Ask yourself this.",
+    },
+]
+
+IDENTITY_FALLBACKS = [
+    {
+        "image_hook": "This is for the one who carries everyone.",
+        "post": "This is for the Filipino professional who:\n\nWorks hard every day.\nSends money home every month.\nShows up for the family.\nNever misses a deadline.\nSmiles through the exhaustion.\n\nAnd quietly, in between all of that,\nwonders if there's a version of this life\nwhere you're not always the one holding everything up.\n\nYou're not alone in that wondering.\n\nWhat does that version look like for you?",
+        "caption": "You know who you are.",
+    },
+    {
+        "image_hook": "Excellent at your job. Invisible in terms of wealth.",
+        "post": "There's a type of person we see a lot.\n\nExcellent at their job.\nReliable. Hardworking. Respected.\n\nBut when it comes to building personal wealth?\nInvisible progress.\n\nNot because they're not smart enough.\nNot because they don't work hard enough.\n\nBut because everything they were taught\nwas about being good at someone else's goal.\n\nDoes any part of that feel familiar?",
+        "caption": "We see you.",
+    },
+]
+
+QUESTION_FALLBACKS = [
+    {
+        "image_hook": "What would you do if your job ended tomorrow?",
+        "post": "Not if you quit.\nNot a career change.\n\nIf your job simply ended tomorrow —\nretrenchment, restructuring, whatever reason —\n\nWhat would you do?\n\nNot emotionally.\nPractically.\n\nHow long could you sustain your life?\nWhat options would you actually have?\n\nMost people avoid this question.\nThe ones who answer it honestly tend to make very different decisions.\n\nWhat's your honest answer?",
+        "caption": "Worth thinking about.",
+    },
+    {
+        "image_hook": "What are you waiting for?",
+        "post": "There's something you've been thinking about starting.\n\nA side income.\nA skill to develop.\nSomething that's yours.\n\nAnd every few months you think about it,\ntell yourself soon,\nand then life gets in the way.\n\nWe're not judging.\nWe did the same thing for longer than we'd like to admit.\n\nBut we are asking:\n\nWhat exactly are you waiting for?",
+        "caption": "Ask yourself this.",
+    },
+]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _weighted_choice(weights: dict) -> str:
-    keys = list(weights.keys())
-    vals = list(weights.values())
-    return random.choices(keys, weights=vals, k=1)[0]
-
-
-def _clean(text: str) -> str:
-    return text.strip().strip('"').strip('\u201c').strip('\u201d').strip()
-
-
 def _parse(raw: str, field: str, stop: str = None) -> str:
     pattern = (
         rf"{field}:\s*(.+?)(?={stop}:|$)"
-        if stop else
-        rf"{field}:\s*(.+?)$"
+        if stop else rf"{field}:\s*(.+?)$"
     )
     m = re.search(pattern, raw, re.DOTALL | re.IGNORECASE)
-    return _clean(m.group(1)) if m else ""
+    return m.group(1).strip().strip('"') if m else ""
+
+
+def _safety_check(text: str) -> tuple:
+    lower = text.lower()
+    for term in FORBIDDEN_TERMS:
+        if term in lower:
+            return False, f"Forbidden term: '{term}'"
+    return True, ""
+
+
+def _get_topic(pool: list) -> str:
+    week = datetime.date.today().isocalendar()[1]
+    day  = datetime.date.today().toordinal()
+    return pool[(week + day) % len(pool)]
+
+
+def _get_fallback(pool: list) -> dict:
+    week = datetime.date.today().isocalendar()[1]
+    return pool[week % len(pool)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. TEXT POST — Formats A / B / BW / C / D / E
+# FORMAT GENERATORS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generate_text_post(post_format: str = "any", hook: str = "any") -> dict:
-    """
-    Generate one on-brand text post.
-    Returns: {post, caption, format, hook}
-    Falls back to template if Gemini unavailable.
-    """
-    fmt  = post_format if post_format in FORMAT_WEIGHTS else _weighted_choice(FORMAT_WEIGHTS)
-    hook = hook if hook in HOOK_WEIGHTS else _weighted_choice(HOOK_WEIGHTS)
+def _generate_post(fmt: str, topic: str, fallback_pool: list) -> dict:
+    """Generic generator for TRUTH, REFRAME, IDENTITY, QUESTION formats."""
 
-    # Inject a real story seed for B, BW, D formats
-    story_context = ""
-    if fmt in ("B", "BW", "D", "A"):
-        story_context = get_seed_context(fmt)
-
-    # Format-specific extra rules
-    format_extra = ""
-    if fmt == "B":
-        format_extra = (
-            "CRITICAL FOR FORMAT B — READ CAREFULLY:\n"
-            "- The couple tells the story TOGETHER from a shared 'we/our' perspective\n"
-            "- NEVER use 'I' or 'My' — not even once\n"
-            "- NEVER write 'My voice...' or 'I watched...' — that is one person narrating\n"
-            "- WRONG: 'My voice decided to go on vacation.' — solo narrator\n"
-            "- WRONG: 'She was amazing. I was not.' — observer framing\n"
-            "- RIGHT: 'Our voices both disappeared. The audience was very patient.'\n"
-            "- RIGHT: 'We both panicked. She recovered faster. Of course.'\n"
-            "- RIGHT: 'We couldn't get through a sentence. We still laugh about it.'\n"
-            "- The humor comes from the COUPLE sharing the embarrassment together\n"
-            "- Use 'we', 'our', 'us' throughout — every sentence\n"
-            "- Caption: 2-5 words, reaction, often Taglish. Punchline is in the POST.\n\n"
-        )
-    elif fmt == "BW":
-        format_extra = (
-            "CRITICAL FOR FORMAT BW:\n"
-            "- Start with a funny couple moment using 'we' — never 'I'\n"
-            "- End with a quiet insight that reframes the moment\n"
-            "- The laugh opens the door. The wisdom is what they save.\n"
-            "- Both parts must speak as a couple — 'we realized', 'we learned', never 'I realized'\n\n"
-        )
-
-    user_msg = (
-        f"Generate exactly 1 Facebook post for @lawrenceprecioussia.\n\n"
-        f"FORMAT: {fmt} — {FORMATS[fmt]}\n"
-        f"EMOTION HOOK: {hook}\n\n"
-        + (f"{story_context}\n\n" if story_context else "")
-        + format_extra
-        + f"Strict rules:\n"
-        f"- Always 'we' — never 'I' — this is a couple speaking together, not one person narrating\n"
-        f"- English body only. Taglish allowed in CAPTION only.\n"
-        f"- Zero product/business/opportunity mentions\n"
-        f"- Max 4 sentences in POST body\n"
-        f"- Short sentences — max 15 words each\n"
-        f"- No exclamation marks more than once per post\n"
-        f"- Never ask people to follow, like, or share\n"
-        f"- Never use: leverage, empower, unlock, holistic, synergy, transformative\n"
-        f"- Apply the Golden Test before finalising\n\n"
-        f"Output format (use exactly):\n"
-        f"IMAGE_HOOK: [1 punchy sentence max 60 chars — the scroll-stopper shown on the image card]\n"
-        f"POST: [A short personal story (3-5 sentences) drawn from the story seed above, "
-        f"followed by 1-2 sentences of a lesson the audience can take away. "
-        f"The story must be tied to HEALTH, FINANCE, or ENTREPRENEURSHIP — whichever fits most naturally. "
-        f"Write it as Lawrence & Precious speaking together ('we'). "
-        f"The lesson should feel discovered, not preached — end with something the audience can reflect on or answer. "
-        f"Total: 5-7 sentences. No bullet points. No headers. Just a flowing story.]\n"
-        f"CAPTION: [2–5 words — Taglish emotional reaction that sits above the story. "
-        f"e.g. 'Siyempre sya pa.' / 'Kaso wala tayong choice.' / 'Totoo 'to.' / 'Hindi namin inasahan.']\n"
-        f"FORMAT: [{fmt}]\n"
-        f"HOOK: [{hook}]"
-    )
-
-    raw = call_gemini(user_msg, temperature=0.92)
-
-    if raw:
-        print(f"\n--- Gemini raw ---\n{raw}\n---")
-        result = {
-            "image_hook": _parse(raw, "IMAGE_HOOK", "POST"),
-            "post":       _parse(raw, "POST", "CAPTION"),
-            "caption":    _parse(raw, "CAPTION", "FORMAT"),
-            "format":     fmt,
-            "hook":       hook,
-        }
-        # Safety filter — retry once if forbidden terms detected
-        is_safe, reason = _safety_check(result["post"], result["caption"])
-        if not is_safe:
-            print(f"  ⚠️ Safety filter triggered: {reason}. Retrying...")
-            raw2 = call_gemini(user_msg + "\n\nIMPORTANT: Do NOT mention any business, product, or opportunity. Keep it purely personal and relatable.", temperature=0.85)
-            if raw2:
-                result = {
-                    "image_hook": _parse(raw2, "IMAGE_HOOK", "POST"),
-                    "post":       _parse(raw2, "POST", "CAPTION"),
-                    "caption":    _parse(raw2, "CAPTION", "FORMAT"),
-                    "format":     fmt,
-                    "hook":       hook,
-                }
-                is_safe2, reason2 = _safety_check(result["post"], result["caption"])
-                if not is_safe2:
-                    print(f"  ⚠️ Retry also failed safety check: {reason2}. Using fallback.")
-                    return _text_fallback(fmt, hook)
-        return result
-
-    # Fallback if both AI providers fail
-    print("  ⚠️ Using template fallback for text post.")
-    return _text_fallback(fmt, hook)
-
-
-def _text_fallback(fmt: str, hook: str) -> dict:
-    """Pre-written fallback posts per format — real stories with lessons."""
-    fallbacks = {
-        "A": (
-            # image_hook
-            "Two salaries. Still ran out before the 25th.",
-            # post — finance theme
-            "We both had good jobs. Two incomes, no dependents, living in Singapore. "
-            "And somehow, every month, we were counting days to payday. "
-            "It wasn't a spending problem. It was a system problem — we had no plan for the money, so the money always had a plan for us. "
-            "The moment we started treating our income like a business — tracking it, allocating it, protecting it — everything changed. "
-            "What does your money do between payday and the next bill?",
-            # caption
-            "Math wasn't mathing.",
+    format_instructions = {
+        "TRUTH": (
+            "Write a TRUTH BOMB post.\n"
+            "One bold statement your audience already feels but has never seen said this clearly.\n"
+            "No setup. No story. No fluff.\n"
+            "Format: 1 bold opening statement, then 3-4 short lines that land the truth,\n"
+            "then 1 question that makes them reflect on their own situation.\n"
+            "Use line breaks between every thought. Maximum 60 words total."
         ),
-        "B": (
-            "She went first. Of course she did.",
-            "We made a deal early on — whoever hits the goal first, the other follows. "
-            "We thought it was a fair agreement. We did not think it through. "
-            "She resigned first, paid back her bond, walked away from a career most people would keep forever. "
-            "Watching someone you love bet on themselves teaches you more about courage than any book ever could. "
-            "The lesson we learned: the most important business decision we ever made wasn't a strategy. It was choosing who to build with. "
-            "Who in your life makes you braver just by watching them?",
-            "Siyempre sya pa.",
+        "REFRAME": (
+            "Write a REFRAME post.\n"
+            "Start with what they were taught or believe. Then pivot to what's actually true.\n"
+            "Format: Start with 'We were taught...' or 'Most of us grew up believing...',\n"
+            "then 3-4 short lines showing the gap between belief and reality,\n"
+            "then 1 question that makes them examine their own situation.\n"
+            "Use line breaks between every thought. Maximum 70 words total."
         ),
-        "BW": (
-            "We started tired. We're still here.",
-            "There was a season when we were building part-time while working full-time. "
-            "We were exhausted in a way that sleep didn't fix — the kind that comes from pouring into two directions at once. "
-            "But something happened in that season that we didn't expect: we got healthier. "
-            "Not physically at first — mentally. We stopped waiting for someone else to make decisions for us. "
-            "Stress from building something you chose is different from stress from a job you're stuck in. "
-            "One drains you. The other — slowly, quietly — builds you. "
-            "What kind of tired are you right now?",
-            "Capain ng pagod, ibang klase.",
+        "IDENTITY": (
+            "Write an IDENTITY post.\n"
+            "Make the ideal prospect feel deeply seen. Describe who they are with specificity.\n"
+            "Format: Start with 'This is for...' or 'There's a type of person...',\n"
+            "then 4-6 short lines describing their daily reality in detail,\n"
+            "then 1-2 lines acknowledging what they quietly carry or wonder,\n"
+            "then 1 gentle question that invites them to respond.\n"
+            "Use line breaks. Maximum 80 words total."
         ),
-        "C": (
-            "What would your Monday morning look like?",
-            "We used to dread Sunday nights. That specific feeling of a Monday already pressing on your chest before it arrives. "
-            "We didn't fix it by finding better jobs. We fixed it by deciding that a Monday we hate is information, not a life sentence. "
-            "That discomfort told us something about what we actually wanted — and gave us a direction to move toward. "
-            "If you could design your ideal Monday morning — no alarm, no commute, no boss checking in — what would it look like? "
-            "We'll go first in the comments.",
-            "Anong feeling ng Sunday night mo?",
-        ),
-        "D": (
-            "Nobody told us it would take this long.",
-            "Nobody told us that the first two years would feel like throwing effort into a void. "
-            "Nobody told us that the people we'd help most were people we hadn't even met yet. "
-            "And nobody told us that the version of ourselves on the other side would barely recognise the ones who started. "
-            "Entrepreneurship isn't a fast track to anything — it's a slow rebuild of who you are. "
-            "The income eventually followed. But the person who could handle that income had to be built first. "
-            "What's something you're building right now that nobody else can see yet?",
-            "Hindi kami nagmamadali. Ngayon naiintindihan namin kung bakit.",
-        ),
-        "E": (
-            "She almost quit three times. She didn't.",
-            "One of the people we walked with told us she almost walked away three times in her first year. "
-            "Work was busy. Family needed her. Her results were slow. Every reason was valid. "
-            "She stayed anyway — not because it was easy, but because she decided that her reasons to continue outweighed her reasons to stop. "
-            "Last month she reached a milestone she had been working toward for two years. "
-            "She sent us a message at midnight. We cried a little. We didn't do that. She did. "
-            "If you're in the middle of something hard right now — what would staying look like?",
-            "That's everything.",
+        "QUESTION": (
+            "Write a QUESTION post.\n"
+            "One question that stops them mid-scroll and makes them think about their own life.\n"
+            "Format: Set up the question with 2-3 short lines of context,\n"
+            "then ask the question clearly,\n"
+            "then 2-3 short lines that deepen it or make it harder to ignore.\n"
+            "End with an invitation to answer. Maximum 60 words total."
         ),
     }
-    image_hook, post, caption = fallbacks.get(fmt, fallbacks["A"])
-    return {"image_hook": image_hook, "post": post, "caption": caption, "format": fmt, "hook": hook}
+
+    instructions = format_instructions.get(fmt, format_instructions["TRUTH"])
+
+    user_msg = (
+        f"{instructions}\n\n"
+        f"Topic angle: {topic}\n\n"
+        f"AUDIENCE: Filipino professionals in Singapore and Philippines.\n"
+        f"Nurses, engineers, IT workers. Ages 25-45. Hardworking. Quietly wondering if there's another way.\n\n"
+        f"RULES:\n"
+        f"- No stories, no 'we experienced this', no personal anecdotes\n"
+        f"- Address 'you' directly OR make general statements about 'most people'\n"
+        f"- Never mention any business, product, or opportunity\n"
+        f"- English only\n"
+        f"- Every line must earn its place — cut anything generic\n\n"
+        f"Output format (exactly):\n"
+        f"IMAGE_HOOK: [1 line, max 8 words — the single boldest thought from this post]\n"
+        f"POST: [the full post with line breaks as described above]\n"
+        f"CAPTION: [2-5 words — e.g. 'Worth sitting with.' / 'Real talk.' / 'Ask yourself this.' / 'We see you.']"
+    )
+
+    raw = call_gemini(user_msg, temperature=0.88, max_tokens=500)
+
+    if raw:
+        image_hook = _parse(raw, "IMAGE_HOOK", "POST")
+        post       = _parse(raw, "POST", "CAPTION")
+        caption    = _parse(raw, "CAPTION")
+
+        safe, reason = _safety_check(post + " " + caption)
+        if not safe:
+            print(f"  ⚠️ Safety: {reason}. Using fallback.")
+            return _get_fallback(fallback_pool)
+
+        if post and image_hook:
+            return {"image_hook": image_hook, "post": post, "caption": caption, "format": fmt}
+
+    print(f"  ⚠️ Gemini failed for {fmt}. Using fallback.")
+    return _get_fallback(fallback_pool)
+
+
+def generate_truth_post() -> dict:
+    topic = _get_topic(TRUTH_TOPICS)
+    return _generate_post("TRUTH", topic, TRUTH_FALLBACKS)
+
+
+def generate_reframe_post() -> dict:
+    topic = _get_topic(REFRAME_TOPICS)
+    result = _generate_post("REFRAME", topic, REFRAME_FALLBACKS)
+    result["format"] = "REFRAME"
+    return result
+
+
+def generate_identity_post() -> dict:
+    topic = _get_topic(IDENTITY_TOPICS)
+    result = _generate_post("IDENTITY", topic, IDENTITY_FALLBACKS)
+    result["format"] = "IDENTITY"
+    return result
+
+
+def generate_question_post() -> dict:
+    topic = _get_topic(QUESTION_TOPICS)
+    result = _generate_post("QUESTION", topic, QUESTION_FALLBACKS)
+    result["format"] = "QUESTION"
+    return result
+
+
+def generate_text_post(post_format: str = "any") -> dict:
+    """
+    Route to the correct generator based on format or weekly calendar.
+    post_format: TRUTH / REFRAME / IDENTITY / QUESTION / any
+    """
+    if post_format == "any":
+        # Use weekly calendar
+        day = datetime.date.today().weekday()
+        calendar = {0: "TRUTH", 3: "REFRAME"}
+        post_format = calendar.get(day, "IDENTITY")
+
+    generators = {
+        "TRUTH":    generate_truth_post,
+        "REFRAME":  generate_reframe_post,
+        "IDENTITY": generate_identity_post,
+        "QUESTION": generate_question_post,
+    }
+    gen = generators.get(post_format.upper(), generate_identity_post)
+    result = gen()
+    print(f"\n  IMG HOOK: {result.get('image_hook', '')}")
+    print(f"  FORMAT:   {result.get('format', post_format)}")
+    print(f"  CAPTION:  {result.get('caption', '')}")
+    print(f"  POST:\n  {result.get('post', '')[:200]}...")
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. POLL POST
+# POLL GENERATOR — MATH format
 # ─────────────────────────────────────────────────────────────────────────────
-
-# Rotate topics by day so every poll feels fresh
-POLL_TOPICS = [
-    # All topics are day-neutral — safe to post on any day of the week
-    "what your typical weeknight looks like after work",
-    "what you do right after receiving your salary",
-    "who makes the big financial decisions in your household",
-    "your ideal weekend with zero obligations",
-    "how you really feel about your current work situation",
-    "the thing couples argue about most without saying it out loud",
-    "what you wish you had more of in your daily life",
-    "which expense surprises you every single month",
-    "the colleague type that exists in every Filipino workplace",
-    "what you do when stress hits at the end of the day",
-    "how you feel when payday is still a week away",
-    "what you would do with one extra free hour every day",
-    "the one bill that always catches you off guard",
-    "what motivates you to keep going when work gets tough",
-    "how you unwind after a long day",
-]
 
 POLL_FALLBACK = {
-    "question": "What does your evening usually look like after work?",
+    "question": "If your job ended tomorrow, how long could you last on savings?",
     "options": [
-        "🅐  Already asleep by 9 PM. No shame.",
-        "🅑  Doomscrolling until midnight somehow.",
-        "🅒  Quietly planning how to escape the 9-to-5.",
-        "🅓  What's rest? I have errands to finish.",
+        "🅐  Less than 1 month — honestly",
+        "🅑  1-3 months, then panic",
+        "🅒  3-6 months, I'd be okay",
+        "🅓  6+ months — I planned for this",
     ],
-    "caption": "Be honest.",
+    "caption": "Be honest with yourself.",
     "fb_message": (
-        "Be honest.\n\n"
-        "What does your evening usually look like after work?\n\n"
-        "🅐  Already asleep by 9 PM. No shame.\n"
-        "🅑  Doomscrolling until midnight somehow.\n"
-        "🅒  Quietly planning how to escape the 9-to-5.\n"
-        "🅓  What's rest? I have errands to finish.\n\n"
+        "Be honest with yourself.\n\n"
+        "If your job ended tomorrow, how long could you last on savings?\n\n"
+        "🅐  Less than 1 month — honestly\n"
+        "🅑  1-3 months, then panic\n"
+        "🅒  3-6 months, I'd be okay\n"
+        "🅓  6+ months — I planned for this\n\n"
         "Comment your answer below 👇"
     ),
 }
@@ -322,47 +358,41 @@ POLL_FALLBACK = {
 
 def generate_poll_post() -> dict:
     """
-    Generate a poll-style post with 3-4 emoji options.
-    Returns: {question, options, caption, fb_message}
+    Wednesday poll — MATH format.
+    Shows real financial numbers/scenarios, 4 relatable options.
+    Designed to make people stop and honestly assess their situation.
     """
-    # Rotate by week number so topics change weekly, not daily
-    # This avoids the same topic repeating within the same week
-    # and ensures day-specific topics never land on wrong days
-    week = datetime.date.today().isocalendar()[1]
-    topic = POLL_TOPICS[week % len(POLL_TOPICS)]
+    week  = datetime.date.today().isocalendar()[1]
+    topic = MATH_TOPICS[week % len(MATH_TOPICS)]
 
     user_msg = (
-        f"Generate a poll-style Facebook post for @lawrenceprecioussia.\n\n"
-        f"REQUIRED TOPIC: {topic}\n"
-        f"The QUESTION must be directly and specifically about this topic. "
-        f"Do not drift to a different topic. Do not reference any specific day of the week "
-        f"(no Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday, weekend, weekday).\n\n"
-        f"Rules:\n"
-        f"- Question: fun, relatable, no wrong answers, complete sentence, strictly about the topic above\n"
-        f"- 4 short options (A, B, C, D) — funny or painfully relatable\n"
-        f"- Each option: maximum 8 words, no punctuation at the end\n"
-        f"- English throughout. Caption can be 1 Taglish phrase.\n"
-        f"- Zero business/product/opportunity mentions\n\n"
-        f"Output EXACTLY in this format, nothing else:\n"
-        f"QUESTION: [complete question here]\n"
-        f"A: [option text]\n"
-        f"B: [option text]\n"
-        f"C: [option text]\n"
-        f"D: [option text]\n"
-        f"CAPTION: [2-5 words]"
+        f"Generate a Facebook poll for Filipino professionals in Singapore and Philippines.\n\n"
+        f"TOPIC: {topic}\n\n"
+        f"This is a MATH/REALITY CHECK poll. Make people stop and honestly assess their own situation.\n\n"
+        f"Requirements:\n"
+        f"- Question: specific, financial, relatable — no wrong answers but all answers sting a little\n"
+        f"- 4 options that cover the realistic range from struggling to secure\n"
+        f"- Each option: max 8 words, honest and a little painfully relatable\n"
+        f"- English only — no Taglish\n"
+        f"- NO mention of any business, product, or opportunity\n"
+        f"- Do NOT reference any specific day of the week\n\n"
+        f"Output EXACTLY:\n"
+        f"QUESTION: [complete question]\n"
+        f"A: [option]\n"
+        f"B: [option]\n"
+        f"C: [option]\n"
+        f"D: [option]\n"
+        f"CAPTION: [2-5 words — e.g. 'Be honest with yourself.' / 'The real number.' / 'Worth knowing.']"
     )
 
-    raw = call_gemini(user_msg, temperature=0.92, max_tokens=400)
+    raw = call_gemini(user_msg, temperature=0.88, max_tokens=400)
 
     if not raw:
-        print("  ⚠️ Gemini unavailable — using poll fallback.")
         return POLL_FALLBACK
 
     print(f"\n--- Gemini raw (poll) ---\n{raw}\n---")
 
-    question = ""
-    opt_a = opt_b = opt_c = opt_d = ""
-    caption = ""
+    question = opt_a = opt_b = opt_c = opt_d = caption = ""
 
     for line in raw.strip().splitlines():
         line = line.strip()
@@ -379,83 +409,31 @@ def generate_poll_post() -> dict:
         elif line.upper().startswith("CAPTION:"):
             caption = line[8:].strip().strip('"')
 
-    # Reject if question contains a specific day name
-    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday",
-                 "saturday", "sunday", "weekday", "weekend"]
-    if any(d in question.lower() for d in day_names):
-        print(f"  ⚠️ Poll question contains day name — retrying with stronger instruction.")
-        user_msg2 = user_msg + (
-            "\n\nSTRICT: The question must NOT mention any day of the week. "
-            "Previous attempt failed this check. Avoid Monday, Friday, weekend entirely."
-        )
-        raw = call_gemini(user_msg2, temperature=0.85, max_tokens=400)
-        if raw:
-            for line in raw.strip().splitlines():
-                line = line.strip()
-                if line.upper().startswith("QUESTION:"):
-                    question = line[9:].strip().strip('"')
-                elif re.match(r"^A[\s:.]", line, re.IGNORECASE):
-                    opt_a = re.sub(r"^A[\s:.]+", "", line, flags=re.IGNORECASE).strip()
-                elif re.match(r"^B[\s:.]", line, re.IGNORECASE):
-                    opt_b = re.sub(r"^B[\s:.]+", "", line, flags=re.IGNORECASE).strip()
-                elif re.match(r"^C[\s:.]", line, re.IGNORECASE):
-                    opt_c = re.sub(r"^C[\s:.]+", "", line, flags=re.IGNORECASE).strip()
-                elif re.match(r"^D[\s:.]", line, re.IGNORECASE):
-                    opt_d = re.sub(r"^D[\s:.]+", "", line, flags=re.IGNORECASE).strip()
-                elif line.upper().startswith("CAPTION:"):
-                    caption = line[8:].strip().strip('"')
-        if any(d in question.lower() for d in day_names):
-            print("  ⚠️ Still contains day name after retry — using fallback.")
-            return POLL_FALLBACK
-
-    # Validate — if question or any option is missing, use fallback
-    missing = []
-    if not question: missing.append("question")
-    if not opt_a:    missing.append("option A")
-    if not opt_b:    missing.append("option B")
-    if not opt_c:    missing.append("option C")
-
-    if missing:
-        print(f"  ⚠️ Poll parse failed — missing: {', '.join(missing)}. Using fallback.")
+    # Reject day-specific questions
+    day_names = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday","weekend","weekday"]
+    if any(d in question.lower() for d in day_names) or not question or not opt_a or not opt_b:
+        print("  ⚠️ Poll rejected (day name or incomplete). Using fallback.")
         return POLL_FALLBACK
 
-    # Use fallback caption if missing
-    if not caption:
-        caption = "Which one are you?"
-
-    options = [
-        f"🅐  {opt_a}",
-        f"🅑  {opt_b}",
-        f"🅒  {opt_c}",
-    ]
+    options = [f"🅐  {opt_a}", f"🅑  {opt_b}", f"🅒  {opt_c}"]
     if opt_d:
         options.append(f"🅓  {opt_d}")
 
     fb_message = (
-        f"{caption}\n\n"
+        f"{caption or 'Be honest with yourself.'}\n\n"
         f"{question}\n\n"
         + "\n".join(options)
         + "\n\nComment your answer below 👇"
     )
 
-    return {
-        "question":   question,
-        "options":    options,
-        "caption":    caption,
-        "fb_message": fb_message,
-    }
+    return {"question": question, "options": options, "caption": caption, "fb_message": fb_message}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. NEWS HOOK — reframes a news article through the LP couple brand lens
+# NEWS HOOK GENERATOR — unchanged, prospect-attraction framing
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_news_hook(article: dict) -> dict:
-    """
-    Reframe a news article through the Lawrence & Precious couple brand lens.
-    article = {title, url, source, summary}
-    Returns: {post, caption, article_url, format, hook}
-    """
     user_msg = (
         f"A news article relevant to our Filipino audience has been published.\n\n"
         f"Article title: {article.get('title', '')}\n"
@@ -464,135 +442,41 @@ def generate_news_hook(article: dict) -> dict:
         f"Write a Facebook post for @lawrenceprecioussia.\n\n"
         f"TONE AND PURPOSE:\n"
         f"- Motivational, not fear-based. Inspire curiosity and possibility.\n"
-        f"- The underlying message is: building another income source matters.\n"
+        f"- The underlying message: building another income source matters.\n"
         f"- Do NOT say that directly. Let the reader arrive there themselves.\n"
-        f"- Translate any jargon into plain everyday language people feel in their daily life.\n\n"
+        f"- Translate any jargon into plain everyday language.\n\n"
         f"FORMAT — write exactly in this style (short lines, no paragraphs):\n"
         f"Line 1: One hook sentence connecting the article to real life\n"
-        f"Line 2: A 'But let's be real:' or similar bridge\n"
-        f"Lines 3-5: 2-3 short punchy lines (4-8 words each) painting the real feeling\n"
-        f"Line 6: 'So the real question is...' or similar pivot\n"
-        f"Lines 7-9: 3 very short options the audience can relate to (e.g. 'Saving more?' / 'Earning more?' / 'Just keeping up?')\n"
-        f"Line 10: One closing curiosity question inviting comments (max 12 words)\n"
+        f"Line 2: 'But let's be real:' bridge\n"
+        f"Lines 3-5: 2-3 short punchy lines (4-8 words each)\n"
+        f"Line 6: 'So the real question is...' pivot\n"
+        f"Lines 7-9: 3 short options (e.g. Saving more? / Earning more? / Just keeping up?)\n"
+        f"Line 10: Closing question inviting comments (max 12 words)\n"
         f"Line 11: 👇 Drop it in the comments\n\n"
         f"RULES:\n"
-        f"- English only — no Taglish anywhere in the post\n"
-        f"- Use 'we/our' — couple speaking together\n"
-        f"- NO product, business, or opportunity mentions\n"
-        f"- NO bullet points or headers — just clean line breaks\n"
-        f"- Keep entire post under 100 words\n\n"
-        f"Output format (use exactly):\n"
+        f"- English only\n"
+        f"- 'we/our' voice\n"
+        f"- NO product/business/opportunity mentions\n"
+        f"- Under 100 words\n\n"
+        f"Output format:\n"
         f"POST: [the full post]\n"
-        f"CAPTION: [2-5 words — short punchy English. e.g. 'Worth thinking about.' / "
-        f"'Real talk.' / 'Ask yourself this.' / 'Something to consider.' / 'This matters.']"
+        f"CAPTION: [2-5 words — e.g. 'Worth thinking about.' / 'Real talk.' / 'Something to consider.']"
     )
 
     raw = call_gemini(user_msg, temperature=0.88, max_tokens=400)
 
     if not raw:
-        # Fallback: simple news hook template
-        post = (
-            f"This caught our attention today.\n\n"
-            f"{article.get('title', '')}.\n\n"
-            f"We've felt this reality ourselves — and we know many of you have too. "
-            f"What's your take on this?"
-        )
         return {
-            "post": post, "caption": "Worth talking about.",
-            "article_url": article.get("url", ""), "format": "NEWS", "hook": "PAIN",
+            "post": f"Something in today's news got us thinking.\n\nBut let's be real:\nIt's not just a headline.\nIt's already affecting our wallets.\n\nSo the real question is...\n\nAre you adjusting?\nBuilding a buffer?\nOr just hoping it passes?\n\nWhat's your honest move right now?\n\n👇 Drop it in the comments",
+            "caption": "Worth thinking about.",
+            "article_url": article.get("url", ""),
         }
 
-    print(f"\n--- Gemini raw (news) ---\n{raw}\n---")
-    result = {
-        "post":        _parse(raw, "POST", "CAPTION"),
-        "caption":     _parse(raw, "CAPTION"),
-        "article_url": article.get("url", ""),
-        "format":      "NEWS",
-        "hook":        "PAIN",
-    }
-    is_safe, reason = _safety_check(result["post"], result["caption"])
-    if not is_safe:
-        print(f"  ⚠️ News hook failed safety check: {reason}. Using fallback.")
-        result["post"] = (
-            f"This caught our attention.\n\n"
-            f"{article.get('title', '')}.\n\n"
-            f"We know a lot of you are feeling this too. What's your take?"
-        )
-        result["caption"] = "Worth talking about."
-    return result
+    post    = _parse(raw, "POST", "CAPTION")
+    caption = _parse(raw, "CAPTION")
 
+    safe, _ = _safety_check(post)
+    if not safe:
+        post = "Something in today's news got us thinking.\n\nBut let's be real:\nIt's not just a headline.\nIt's something most of us are quietly adjusting to.\n\nWhat are you paying more attention to these days?\n\n👇 Drop it in the comments"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. CTA POST — pre-written rotating bank, no Gemini needed
-# ─────────────────────────────────────────────────────────────────────────────
-
-CTA_BANK = [
-    {
-        "caption": "We get asked this a lot.",
-        "post": (
-            "A lot of people have been asking us how we started — "
-            "especially those juggling a full-time job while trying to build something on the side.\n\n"
-            "We've been there. We know exactly what that feels like.\n\n"
-            "If you're curious about our story and want to know where we began, "
-            "comment START below and we'll walk you through it. "
-            "No pressure, no pitch — just a real conversation."
-        ),
-    },
-    {
-        "caption": "If this is you, keep reading.",
-        "post": (
-            "You have a stable job. You're not struggling — but something feels missing.\n\n"
-            "Maybe it's the feeling that your time isn't really yours. "
-            "Or that one income isn't quite enough for the life you want for your family.\n\n"
-            "We felt that too. Comment START below and we'll share where our story started."
-        ),
-    },
-    {
-        "caption": "Starting is the hardest part.",
-        "post": (
-            "We started with full-time jobs, zero business experience, "
-            "and a lot of uncertainty. We didn't have it all figured out — we just began.\n\n"
-            "If you've been thinking about building something but don't know the first step, "
-            "comment START below. We'll guide you through it."
-        ),
-    },
-    {
-        "caption": "For the quiet ones.",
-        "post": (
-            "Some of you have been following this page for a while. "
-            "Reading. Watching. Thinking.\n\n"
-            "You haven't reached out yet — and that's okay. We understand completely.\n\n"
-            "When you're ready, comment START below. No rush. No pressure. "
-            "Just two people who are genuinely ready to listen."
-        ),
-    },
-    {
-        "caption": "A simple question.",
-        "post": (
-            "If someone told you five years ago that your life could look completely different today — "
-            "more time, more choices, more breathing room — would you have believed them?\n\n"
-            "We probably wouldn't have either. But here we are.\n\n"
-            "Comment START if you're curious how we got here."
-        ),
-    },
-    {
-        "caption": "Real talk.",
-        "post": (
-            "We're not going to promise you overnight success or easy money. That's not what we do.\n\n"
-            "What we can offer is a real conversation, a real path, and real support "
-            "from two people who have walked this for over 14 years.\n\n"
-            "If that sounds like what you need right now, comment START below."
-        ),
-    },
-]
-
-
-def get_cta_post(force_index: int = None) -> dict:
-    """
-    Returns a rotating CTA post — no Gemini call.
-    Rotates by ISO week number ÷ 2 for bi-weekly cadence.
-    force_index overrides rotation (for testing).
-    """
-    week = datetime.date.today().isocalendar()[1]
-    idx = force_index if force_index is not None else (week // 2) % len(CTA_BANK)
-    return CTA_BANK[idx]
+    return {"post": post, "caption": caption, "article_url": article.get("url", "")}

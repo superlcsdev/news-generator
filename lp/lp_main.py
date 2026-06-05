@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 # All imports from the lp/ subfolder
-from lp_post_generator import generate_text_post, generate_poll_post, generate_news_hook, get_cta_post
+from lp_post_generator import generate_text_post, generate_poll_post, generate_news_hook
 from lp_news_fetcher import fetch_top_articles, save_posted_article
 from lp_image_generator import create_post_image, create_text_card
 from lp_faith_generator import generate_faith_post
@@ -133,47 +133,38 @@ def lp_post_text(message: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_text_post(fmt: str, hook: str, dry_run: bool):
-    # Use weekly calendar when format/hook not manually specified
-    if fmt == "any" or hook == "any":
+    # New format system — route by day if not specified
+    if fmt == "any":
         day = datetime.date.today().weekday()
-        calendar_entry = WEEKLY_CALENDAR[day]
-        if fmt == "any":
-            fmt = calendar_entry["format"]
-        if hook == "any":
-            hook = calendar_entry["hook"]
-        print(f"  📅 Calendar: today is {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][day]} → Format {fmt} | Hook {hook}")
+        fmt_map = {0: "TRUTH", 3: "REFRAME", 1: "IDENTITY", 4: "QUESTION"}
+        fmt = fmt_map.get(day, "IDENTITY")
+        print(f"  📅 Calendar: {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][day]} → Format {fmt}")
 
     print("\n[1/4] Generating text post...")
-    result = generate_text_post(post_format=fmt, hook=hook)
-    print(f"\n  POST:    {result['post']}")
-    print(f"  CAPTION: {result['caption']}")
-    print(f"  IMG HOOK: {result.get('image_hook', '(none)')}")
-    print(f"  FORMAT:  {result['format']} | HOOK: {result['hook']}")
+    result = generate_text_post(post_format=fmt)
 
-    # Use pure black text card for short punchy formats (A and B)
-    # Use photo background for wisdom/story formats (BW, D, E)
-    use_text_card = fmt in ("A", "B")
+    # All new formats use text card — clean, bold, no photo needed
+    use_text_card = True
 
-    print(f"\n[2/4] {'Creating text card' if use_text_card else 'Generating image'}...")
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"\n[2/4] Creating text card...")
+    ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     img_path = str(OUTPUT_DIR / f"lp_post_{ts}.jpg")
-    # Image always shows the short hook — full story goes in FB caption
-    image_text = result.get("image_hook") or result["post"]
-    saved = create_post_image(post_text=image_text, output_path=img_path, use_text_card=use_text_card)
+    image_text = result.get("image_hook") or result["post"][:80]
+    saved = create_post_image(post_text=image_text, output_path=img_path, use_text_card=True)
     if not saved:
         print("❌ Image creation failed."); sys.exit(1)
 
-    # Facebook caption = Taglish reaction + full story (richer than the image)
-    fb_msg = f"{result['caption']}\n\n{result['post']}" if result["caption"] else result["post"]
+    fb_msg = f"{result['caption']}\n\n{result['post']}" if result.get("caption") else result["post"]
 
     if dry_run:
         print("\n[DRY RUN ✓] Skipping Facebook post.")
-        print(f"  Message preview: {fb_msg[:150]}...")
-        print(f"  Image: {saved}")
+        print(f"\nImage hook: {result.get('image_hook', '')}")
+        print(f"\nFull FB message:\n{fb_msg}")
+        print(f"\nImage: {saved}")
         return
 
     print("\n[3/4] Posting to Facebook...")
-    ok = lp_post_image(saved, fb_msg, first_comment="Follow us: @lawrenceprecioussia")
+    ok = lp_post_image(saved, fb_msg)
     print("\n✅ Done!" if ok else "\n❌ Post failed.")
 
 
